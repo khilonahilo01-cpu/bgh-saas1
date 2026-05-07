@@ -117,24 +117,27 @@ const DB={
 };
 
 // ─── LOGO ─────────────────────────────────────────────────
-const Logo=({size=64,showBeta=true})=>(
-  <div style={{position:'relative',display:'inline-block'}}>
-    <svg viewBox="0 0 200 200" width={size} height={size}>
-      <circle cx="100" cy="100" r="99" fill="#2a2a2a"/>
-      <circle cx="100" cy="100" r="93" fill="#0a0a0a"/>
-      <text x="48" y="118" fill={B.accent} textAnchor="middle" fontFamily="Arial Black,sans-serif" fontWeight="900" fontSize="56">B</text>
-      <text x="100" y="118" fill="#d6d3d1" textAnchor="middle" fontFamily="Arial Black,sans-serif" fontWeight="900" fontSize="56">G</text>
-      <text x="152" y="118" fill={B.accent} textAnchor="middle" fontFamily="Arial Black,sans-serif" fontWeight="900" fontSize="56">H</text>
-      <rect x="22" y="96" width="156" height="3" fill="#1a1a1a"/>
-      <text x="100" y="148" fill="#555" fontSize="9" letterSpacing="4" textAnchor="middle" fontFamily="sans-serif">m a r k e t i n g  a g e n c y</text>
-    </svg>
-    {showBeta&&(
-      <div style={{position:'absolute',top:-4,left:-4,background:B.accent,color:'white',fontSize:'9px',fontWeight:'900',padding:'2px 6px',borderRadius:'9999px',letterSpacing:'0.1em'}}>
-        BETA
+const Logo=({size=64,showBeta=true})=>{
+  const s=size;
+  return(
+    <div style={{position:'relative',display:'inline-block'}}>
+      <div style={{width:s,height:s,borderRadius:'24%',background:`linear-gradient(135deg,${B.accent} 0%,#7a2a18 100%)`,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:`0 4px 20px ${B.accent}44`}}>
+        <svg viewBox="0 0 48 48" width={s*0.6} height={s*0.6} fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="6" y="14" width="36" height="6" rx="3" fill="white"/>
+          <rect x="6" y="24" width="24" height="6" rx="3" fill="rgba(255,255,255,0.7)"/>
+          <rect x="6" y="34" width="30" height="6" rx="3" fill="rgba(255,255,255,0.5)"/>
+          <circle cx="38" cy="37" r="7" fill="white"/>
+          <path d="M35 37l2 2 4-4" stroke={B.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
       </div>
-    )}
-  </div>
-);
+      {showBeta&&(
+        <div style={{position:'absolute',top:-6,left:-6,background:'#111',border:`1px solid ${B.accent}`,color:B.accent,fontSize:'9px',fontWeight:'900',padding:'2px 7px',borderRadius:'9999px',letterSpacing:'0.1em'}}>
+          BETA
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ─── ICONS ────────────────────────────────────────────────
 const IC={
@@ -234,43 +237,55 @@ function Modal({onClose,title,children}){
   );
 }
 
-// ─── LANDING ──────────────────────────────────────────────
 function Landing({onLogin,onRegister}){
   return(
     <div style={{minHeight:'100vh',background:B.bg,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'2rem 1rem',position:'relative',overflow:'hidden'}}>
       <div style={{position:'absolute',top:'-10rem',right:'-10rem',width:'35rem',height:'35rem',borderRadius:'50%',background:`radial-gradient(circle,${B.accent}15,transparent 60%)`}}/>
-      <div style={{textAlign:'center',position:'relative',maxWidth:'30rem'}}>
-        <Logo size={110}/>
-        <h1 style={{fontSize:'2.25rem',fontWeight:'900',color:B.text,margin:'1.5rem 0 0.5rem',lineHeight:1.2}}>منصة BGH</h1>
-        <p style={{color:B.muted,marginBottom:'1rem',fontSize:'1rem'}}>إدارة الإيديتورز والمدفوعات لوكالات التسويق</p>
+      <div style={{position:'absolute',bottom:'-10rem',left:'-10rem',width:'35rem',height:'35rem',borderRadius:'50%',background:`radial-gradient(circle,${B.accent}08,transparent 60%)`}}/>
 
-        <div style={{display:'inline-flex',alignItems:'center',gap:'0.5rem',padding:'0.4rem 1rem',borderRadius:'9999px',background:'rgba(176,74,47,0.15)',border:'1px solid rgba(176,74,47,0.3)',marginBottom:'2rem'}}>
-          <div style={{width:'6px',height:'6px',borderRadius:'50%',background:B.accent,animation:'pulse 2s infinite'}}/>
-          <span style={{fontSize:'0.75rem',fontWeight:'700',color:B.accent}}>BETA — مجاني خلال فترة التجربة</span>
+      <div style={{textAlign:'center',position:'relative',maxWidth:'28rem'}}>
+        <Logo size={90}/>
+        <h1 style={{fontSize:'2.25rem',fontWeight:'900',color:B.text,margin:'1.5rem 0 0.75rem',lineHeight:1.2}}>
+          منصة إدارة الإيديتورز
+        </h1>
+        <p style={{color:B.muted,marginBottom:'1.5rem',fontSize:'1rem',lineHeight:1.7}}>
+          سجل خدمة الإيديتورز، تابع المدفوعات، وادر وكالتك من مكان واحد
+        </p>
+
+        {/* Free badge */}
+        <div style={{display:'inline-flex',alignItems:'center',gap:'0.75rem',padding:'0.75rem 1.5rem',borderRadius:'1rem',background:'rgba(34,197,94,0.1)',border:'1px solid rgba(34,197,94,0.2)',marginBottom:'2rem'}}>
+          <div style={{fontSize:'1.5rem'}}>🎉</div>
+          <div style={{textAlign:'right'}}>
+            <div style={{fontWeight:'800',color:B.success,fontSize:'1rem'}}>مجاني 100% الآن</div>
+            <div style={{fontSize:'0.75rem',color:B.muted}}>سجل اليوم واستعمل المنصة مجاناً</div>
+          </div>
         </div>
 
-        {/* Plans */}
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'0.5rem',marginBottom:'2rem'}}>
+        {/* Features */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.5rem',marginBottom:'2rem',textAlign:'right'}}>
           {[
-            {plan:'مجاني 🆓',price:'0 دج',f:'2 إيديتور · 20 فيديو',c:'#888',bg:'rgba(255,255,255,0.05)'},
-            {plan:'Basic ⭐',price:'1,500 دج/شهر',f:'5 إيديتورز · غير محدود',c:'#fbbf24',bg:'rgba(251,191,36,0.1)'},
-            {plan:'Pro 💎',price:'3,000 دج/شهر',f:'غير محدود كامل',c:'#a78bfa',bg:'rgba(167,139,250,0.1)'},
-          ].map(p=>(
-            <div key={p.plan} style={{padding:'0.875rem 0.5rem',borderRadius:'0.75rem',background:p.bg,border:`1px solid ${p.c}33`,textAlign:'center'}}>
-              <div style={{fontWeight:'800',color:p.c,fontSize:'0.75rem',marginBottom:'0.25rem'}}>{p.plan}</div>
-              <div style={{fontWeight:'900',color:B.text,fontSize:'0.875rem',marginBottom:'0.25rem'}}>{p.price}</div>
-              <div style={{fontSize:'0.6rem',color:B.muted}}>{p.f}</div>
+            {ic:'✅',t:'تسجيل الفيديوهات'},
+            {ic:'✅',t:'حسابات الإيديتورز'},
+            {ic:'✅',t:'لوحين تحكم للمسير والإيديتور'},
+            {ic:'✅',t:'يخدم على الموبايل والكمبيوتر'},
+          ].map(f=>(
+            <div key={f.t} style={{padding:'0.625rem 0.875rem',background:B.card,border:`1px solid ${B.border}`,borderRadius:'0.75rem',fontSize:'0.8rem',color:B.text,display:'flex',alignItems:'center',gap:'0.5rem'}}>
+              <span>{f.ic}</span><span>{f.t}</span>
             </div>
           ))}
         </div>
 
         <div style={{display:'flex',flexDirection:'column',gap:'0.75rem'}}>
           <button onClick={onRegister} style={{width:'100%',padding:'1rem',borderRadius:'0.75rem',background:B.accent,color:'white',fontWeight:'800',border:'none',cursor:'pointer',fontSize:'1rem',display:'flex',alignItems:'center',justifyContent:'center',gap:'0.5rem'}}>
-            <Ic n="building" size={20} color="white"/> ابدا مجاناً — سجل وكالتك
+            <Ic n="building" size={20} color="white"/> سجل وكالتك مجاناً
           </button>
-          <button onClick={onLogin} style={{width:'100%',padding:'1rem',borderRadius:'0.75rem',background:'transparent',color:B.text,fontWeight:'800',border:`1px solid ${B.border}`,cursor:'pointer',fontSize:'1rem'}}>
-            تسجيل الدخول
+          <button onClick={onLogin} style={{width:'100%',padding:'1rem',borderRadius:'0.75rem',background:'transparent',color:B.muted,fontWeight:'700',border:`1px solid ${B.border}`,cursor:'pointer',fontSize:'0.95rem'}}>
+            عندي حساب بالفعل — دخول
           </button>
+        </div>
+
+        <div style={{marginTop:'1.5rem',fontSize:'0.72rem',color:B.muted,lineHeight:1.6}}>
+          لا حاجة لبطاقة بنكية · بيانات آمنة · يخدم على كل الأجهزة
         </div>
       </div>
     </div>
