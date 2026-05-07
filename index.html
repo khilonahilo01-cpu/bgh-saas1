@@ -1,9 +1,10 @@
+
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>BGH Platform</title>
+  <title>BGH Platform BETA</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -11,13 +12,14 @@
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"/>
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:'Cairo',sans-serif;background:#faf7f0;direction:rtl;}
+    body{font-family:'Cairo',sans-serif;background:#0f0f0f;direction:rtl;}
     *{-webkit-tap-highlight-color:transparent;}
     input,select,textarea,button{font-family:inherit;}
     ::-webkit-scrollbar{width:5px;height:5px;}
-    ::-webkit-scrollbar-thumb{background:#ccc;border-radius:3px;}
+    ::-webkit-scrollbar-thumb{background:#333;border-radius:3px;}
     .spin{animation:spin 1s linear infinite;}
     @keyframes spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
+    .glow{box-shadow:0 0 20px rgba(176,74,47,0.3);}
   </style>
 </head>
 <body>
@@ -30,11 +32,22 @@ const SUPABASE_URL='https://dcgmtjdvvdchrfxjpkmu.supabase.co';
 const SUPABASE_KEY='sb_publishable_2qhGGpGhFx6j2AE-QLS6_A_GnPd268D';
 const SUPER_EMAIL='admin@bghplatform.com';
 const SUPER_PASS='bgh@admin2024';
-
-// حدود الخطة المجانية
 const FREE_LIMITS={editors:2,clients:5,videos:20};
 
-const B={bg:'#faf7f0',ink:'#0a0a0a',accent:'#b04a2f',soft:'#fde9e1'};
+// ─── BRAND — Dark Theme ───────────────────────────────────
+const B={
+  bg:'#0f0f0f',
+  card:'#1a1a1a',
+  border:'#2a2a2a',
+  accent:'#b04a2f',
+  accentSoft:'rgba(176,74,47,0.15)',
+  text:'#f5f5f5',
+  muted:'#888',
+  success:'#22c55e',
+  warning:'#f59e0b',
+  danger:'#ef4444',
+};
+
 const fmt=n=>new Intl.NumberFormat('en-US').format(Math.round(Number(n)||0));
 const fmtD=iso=>iso?new Date(iso).toLocaleDateString('fr-FR'):'';
 const today=()=>new Date().toISOString().slice(0,10);
@@ -42,24 +55,16 @@ const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 const hash=s=>{let h=0;for(let i=0;i<s.length;i++){h=((h<<5)-h)+s.charCodeAt(i);h|=0;}return'h'+Math.abs(h).toString(36)+'_'+s.length;};
 const EMPTY={editors:[],clients:[],videos:[]};
 
-const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
-
-// ─── SUBSCRIPTION HELPERS ─────────────────────────────────
-const isExpired=ag=>{
-  if(!ag.plan_expires_at)return false;
-  return new Date(ag.plan_expires_at)<new Date();
-};
-const isSuspended=ag=>ag.is_active===false;
+const isExpired=ag=>{if(!ag?.plan_expires_at)return false;return new Date(ag.plan_expires_at)<new Date();};
+const isSuspended=ag=>ag?.is_active===false;
+const daysLeft=ag=>{if(!ag?.plan_expires_at)return null;return Math.max(0,Math.ceil((new Date(ag.plan_expires_at)-new Date())/(86400000)));};
 const planLabel=plan=>{
-  if(plan==='pro')return{label:'Pro 💎',color:'#7c3aed',bg:'#ede9fe'};
-  if(plan==='basic')return{label:'Basic ⭐',color:'#d97706',bg:'#fef3c7'};
-  return{label:'مجاني',color:'#6b7280',bg:'#f3f4f6'};
+  if(plan==='pro')return{label:'Pro 💎',color:'#a78bfa',bg:'rgba(167,139,250,0.15)'};
+  if(plan==='basic')return{label:'Basic ⭐',color:'#fbbf24',bg:'rgba(251,191,36,0.15)'};
+  return{label:'مجاني',color:'#888',bg:'rgba(255,255,255,0.05)'};
 };
-const daysLeft=ag=>{
-  if(!ag.plan_expires_at)return null;
-  const diff=new Date(ag.plan_expires_at)-new Date();
-  return Math.max(0,Math.ceil(diff/(1000*60*60*24)));
-};
+
+const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 
 // ─── DB ───────────────────────────────────────────────────
 const DB={
@@ -69,19 +74,30 @@ const DB={
     await sb.from('app_data').insert({agency_id:data.id,data:EMPTY});
     return data;
   },
-  async login(email,password){
+  async loginAgency(email,password){
     const{data,error}=await sb.from('agencies').select('*').eq('email',email).single();
     if(error||!data)throw new Error('البريد الإلكتروني غير موجود');
     if(data.password_hash!==hash(password))throw new Error('كلمة السر غالطة');
     return data;
   },
+  async loginEditor(agencyEmail,editorPassword){
+    // Find agency by email
+    const{data:ag,error:agErr}=await sb.from('agencies').select('*').eq('email',agencyEmail.toLowerCase().trim()).single();
+    if(agErr||!ag)throw new Error('الوكالة غير موجودة');
+    // Load agency data to find editor
+    const{data:appData}=await sb.from('app_data').select('data').eq('agency_id',ag.id).single();
+    const d=appData?.data||EMPTY;
+    const editor=d.editors.find(e=>e.password===hash(editorPassword));
+    if(!editor)throw new Error('كلمة السر غالطة');
+    return{agency:ag,editor,appData:d};
+  },
   async loadData(agencyId){
-    const{data,error}=await sb.from('app_data').select('data').eq('agency_id',agencyId).single();
-    if(error)return{...EMPTY};
+    const{data}=await sb.from('app_data').select('data').eq('agency_id',agencyId).single();
     return data?.data||{...EMPTY};
   },
   async saveData(agencyId,data){
-    await sb.from('app_data').upsert({agency_id:agencyId,data,updated_at:new Date().toISOString()});
+    const{error}=await sb.from('app_data').upsert({agency_id:agencyId,data,updated_at:new Date().toISOString()},{onConflict:'agency_id'});
+    if(error)throw error;
   },
   async getAllAgencies(){
     const{data}=await sb.from('agencies').select('*').order('created_at',{ascending:false});
@@ -100,19 +116,27 @@ const DB={
   }
 };
 
-// ─── LOGO & ICONS ─────────────────────────────────────────
-const Logo=({size=64})=>(
-  <svg viewBox="0 0 200 200" width={size} height={size}>
-    <circle cx="100" cy="100" r="99" fill="#e5e7eb"/>
-    <circle cx="100" cy="100" r="93" fill="#0a0a0a"/>
-    <text x="48" y="118" fill={B.accent} textAnchor="middle" fontFamily="Arial Black,sans-serif" fontWeight="900" fontSize="56">B</text>
-    <text x="100" y="118" fill="#d6d3d1" textAnchor="middle" fontFamily="Arial Black,sans-serif" fontWeight="900" fontSize="56">G</text>
-    <text x="152" y="118" fill={B.accent} textAnchor="middle" fontFamily="Arial Black,sans-serif" fontWeight="900" fontSize="56">H</text>
-    <rect x="22" y="96" width="156" height="3" fill="#0a0a0a"/>
-    <text x="100" y="148" fill="#9ca3af" fontSize="9" letterSpacing="4" textAnchor="middle" fontFamily="sans-serif">m a r k e t i n g  a g e n c y</text>
-  </svg>
+// ─── LOGO ─────────────────────────────────────────────────
+const Logo=({size=64,showBeta=true})=>(
+  <div style={{position:'relative',display:'inline-block'}}>
+    <svg viewBox="0 0 200 200" width={size} height={size}>
+      <circle cx="100" cy="100" r="99" fill="#2a2a2a"/>
+      <circle cx="100" cy="100" r="93" fill="#0a0a0a"/>
+      <text x="48" y="118" fill={B.accent} textAnchor="middle" fontFamily="Arial Black,sans-serif" fontWeight="900" fontSize="56">B</text>
+      <text x="100" y="118" fill="#d6d3d1" textAnchor="middle" fontFamily="Arial Black,sans-serif" fontWeight="900" fontSize="56">G</text>
+      <text x="152" y="118" fill={B.accent} textAnchor="middle" fontFamily="Arial Black,sans-serif" fontWeight="900" fontSize="56">H</text>
+      <rect x="22" y="96" width="156" height="3" fill="#1a1a1a"/>
+      <text x="100" y="148" fill="#555" fontSize="9" letterSpacing="4" textAnchor="middle" fontFamily="sans-serif">m a r k e t i n g  a g e n c y</text>
+    </svg>
+    {showBeta&&(
+      <div style={{position:'absolute',top:-4,left:-4,background:B.accent,color:'white',fontSize:'9px',fontWeight:'900',padding:'2px 6px',borderRadius:'9999px',letterSpacing:'0.1em'}}>
+        BETA
+      </div>
+    )}
+  </div>
 );
 
+// ─── ICONS ────────────────────────────────────────────────
 const IC={
   lock:'<path d="M7 11V7a5 5 0 0 1 10 0v4"/><rect x="3" y="11" width="18" height="11" rx="2"/>',
   eye:'<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
@@ -140,8 +164,7 @@ const IC={
   loader:'<line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/>',
   phone:'<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 8.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>',
   crown:'<path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7z"/><line x1="5" y1="20" x2="19" y2="20"/>',
-  ban:'<circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>',
-  calendar:'<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
+  video:'<polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>',
 };
 const Ic=({n,size=18,color='currentColor'})=>(
   <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -150,16 +173,16 @@ const Ic=({n,size=18,color='currentColor'})=>(
 );
 
 // ─── UI ───────────────────────────────────────────────────
-const INP={width:'100%',padding:'0.75rem',background:'#fafaf9',border:'1px solid #e7e5e4',borderRadius:'0.75rem',outline:'none',fontSize:'0.875rem'};
+const INP={width:'100%',padding:'0.75rem',background:'#111',border:`1px solid ${B.border}`,borderRadius:'0.75rem',outline:'none',fontSize:'0.875rem',color:B.text};
 
 function PwField({value,onChange,show,setShow,placeholder,onEnter}){
   return(
     <div style={{position:'relative'}}>
-      <div style={{position:'absolute',right:'0.75rem',top:'50%',transform:'translateY(-50%)',pointerEvents:'none',display:'flex'}}><Ic n="lock" size={14} color="#a8a29e"/></div>
+      <div style={{position:'absolute',right:'0.75rem',top:'50%',transform:'translateY(-50%)',pointerEvents:'none',display:'flex'}}><Ic n="lock" size={14} color={B.muted}/></div>
       <input type={show?'text':'password'} value={value} onChange={e=>onChange(e.target.value)}
         onKeyDown={e=>e.key==='Enter'&&onEnter&&onEnter()} placeholder={placeholder}
         style={{...INP,paddingRight:'2.5rem',paddingLeft:'2.5rem'}}/>
-      <button type="button" onClick={()=>setShow(!show)} style={{position:'absolute',left:'0.75rem',top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',color:'#a8a29e',display:'flex'}}>
+      <button type="button" onClick={()=>setShow(!show)} style={{position:'absolute',left:'0.75rem',top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',color:B.muted,display:'flex'}}>
         <Ic n={show?'eyeoff':'eye'} size={15}/>
       </button>
     </div>
@@ -169,7 +192,7 @@ function PwField({value,onChange,show,setShow,placeholder,onEnter}){
 function Field({label,children}){
   return(
     <div>
-      <label style={{display:'block',fontSize:'0.75rem',fontWeight:'700',color:'#57534e',marginBottom:'0.375rem'}}>{label}</label>
+      <label style={{display:'block',fontSize:'0.75rem',fontWeight:'700',color:B.muted,marginBottom:'0.375rem'}}>{label}</label>
       {children}
     </div>
   );
@@ -178,17 +201,17 @@ function Field({label,children}){
 function AuthCard({children,title,sub}){
   return(
     <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',padding:'2rem 1rem',background:B.bg,position:'relative',overflow:'hidden'}}>
-      <div style={{position:'absolute',top:'-8rem',left:'-8rem',width:'24rem',height:'24rem',borderRadius:'50%',background:`radial-gradient(circle,${B.accent}33,transparent 70%)`,opacity:0.3}}/>
-      <div style={{position:'absolute',bottom:'-8rem',right:'-8rem',width:'24rem',height:'24rem',borderRadius:'50%',background:`radial-gradient(circle,${B.ink}55,transparent 70%)`,opacity:0.2}}/>
+      <div style={{position:'absolute',top:'-10rem',left:'-10rem',width:'30rem',height:'30rem',borderRadius:'50%',background:`radial-gradient(circle,${B.accent}22,transparent 60%)`}}/>
+      <div style={{position:'absolute',bottom:'-10rem',right:'-10rem',width:'30rem',height:'30rem',borderRadius:'50%',background:`radial-gradient(circle,${B.accent}11,transparent 60%)`}}/>
       <div style={{width:'100%',maxWidth:'24rem',position:'relative'}}>
-        <div style={{display:'flex',flexDirection:'column',alignItems:'center',marginBottom:'1.5rem'}}>
-          <Logo size={80}/>
-          <div style={{marginTop:'0.75rem',fontSize:'11px',letterSpacing:'0.4em',color:'#78716c',textTransform:'uppercase'}}>BGH · Marketing Platform</div>
+        <div style={{display:'flex',flexDirection:'column',alignItems:'center',marginBottom:'2rem'}}>
+          <Logo size={88}/>
+          <div style={{marginTop:'0.75rem',fontSize:'11px',letterSpacing:'0.4em',color:B.muted,textTransform:'uppercase'}}>BGH · Marketing Platform</div>
         </div>
-        <div style={{background:'white',borderRadius:'1.5rem',border:'1px solid #e7e5e4',padding:'1.75rem',boxShadow:'0 1px 2px rgba(0,0,0,0.05)'}}>
+        <div style={{background:B.card,borderRadius:'1.5rem',border:`1px solid ${B.border}`,padding:'2rem',boxShadow:'0 20px 60px rgba(0,0,0,0.5)'}}>
           {title&&<div style={{textAlign:'center',marginBottom:'1.5rem'}}>
-            <h2 style={{fontSize:'1.5rem',fontWeight:'900',color:'#1c1917',marginBottom:'0.25rem'}}>{title}</h2>
-            {sub&&<p style={{fontSize:'0.875rem',color:'#78716c'}}>{sub}</p>}
+            <h2 style={{fontSize:'1.5rem',fontWeight:'900',color:B.text,marginBottom:'0.25rem'}}>{title}</h2>
+            {sub&&<p style={{fontSize:'0.875rem',color:B.muted}}>{sub}</p>}
           </div>}
           {children}
         </div>
@@ -199,64 +222,13 @@ function AuthCard({children,title,sub}){
 
 function Modal({onClose,title,children}){
   return(
-    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',backdropFilter:'blur(4px)',zIndex:50,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:'white',width:'100%',maxWidth:'28rem',borderRadius:'1.5rem 1.5rem 0 0',padding:'1.5rem',maxHeight:'90vh',overflowY:'auto'}}>
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',backdropFilter:'blur(4px)',zIndex:50,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:B.card,border:`1px solid ${B.border}`,width:'100%',maxWidth:'28rem',borderRadius:'1.5rem 1.5rem 0 0',padding:'1.5rem',maxHeight:'90vh',overflowY:'auto'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1.25rem'}}>
-          <h3 style={{fontSize:'1.25rem',fontWeight:'900',color:'#1c1917'}}>{title}</h3>
-          <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',color:'#78716c',display:'flex'}}><Ic n="x" size={18}/></button>
+          <h3 style={{fontSize:'1.25rem',fontWeight:'900',color:B.text}}>{title}</h3>
+          <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',color:B.muted,display:'flex'}}><Ic n="x" size={18}/></button>
         </div>
         {children}
-      </div>
-    </div>
-  );
-}
-
-function StatCard({label,value,ic,hl,grn,raw}){
-  let bg='white',bc='#e7e5e4',cl='#1c1917';
-  if(grn){bc='#a7f3d0';cl='#047857';}
-  if(hl){bg=B.ink;bc=B.ink;cl='white';}
-  return(
-    <div style={{background:bg,border:`1px solid ${bc}`,color:cl,borderRadius:'1rem',padding:'1rem'}}>
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'0.5rem'}}>
-        <span style={{fontSize:'0.7rem',fontWeight:'600',opacity:0.8}}>{label}</span>
-        <Ic n={ic} size={16}/>
-      </div>
-      <div style={{fontSize:'1.4rem',fontWeight:'900',fontVariantNumeric:'tabular-nums'}}>
-        {raw?value:<>{fmt(value)}<span style={{fontSize:'0.75rem',opacity:0.6}}> دج</span></>}
-      </div>
-    </div>
-  );
-}
-
-// ─── EXPIRED SCREEN ───────────────────────────────────────
-function ExpiredScreen({agency,onLogout}){
-  const suspended=isSuspended(agency);
-  return(
-    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:B.bg,padding:'2rem 1rem'}}>
-      <div style={{textAlign:'center',maxWidth:'24rem',width:'100%'}}>
-        <Logo size={80}/>
-        <div style={{marginTop:'2rem',padding:'2rem',background:'white',borderRadius:'1.5rem',border:'1px solid #e7e5e4'}}>
-          <div style={{fontSize:'3rem',marginBottom:'1rem'}}>{suspended?'🚫':'⏰'}</div>
-          <h2 style={{fontSize:'1.5rem',fontWeight:'900',color:'#1c1917',marginBottom:'0.5rem'}}>
-            {suspended?'الحساب موقوف':'انتهى الاشتراك'}
-          </h2>
-          <p style={{color:'#78716c',marginBottom:'1.5rem',fontSize:'0.875rem'}}>
-            {suspended
-              ?'حسابك موقوف مؤقتاً. تواصل معنا لمعرفة السبب.'
-              :'اشتراكك انتهى. تواصل معنا لتجديده والاستمرار في استخدام المنصة.'
-            }
-          </p>
-          <div style={{background:'#f5f5f4',borderRadius:'1rem',padding:'1rem',marginBottom:'1.5rem'}}>
-            <div style={{fontSize:'0.75rem',color:'#78716c',marginBottom:'0.25rem'}}>تواصل معنا عبر</div>
-            <div style={{fontWeight:'800',fontSize:'1.1rem',color:B.ink,display:'flex',alignItems:'center',justifyContent:'center',gap:'0.5rem'}}>
-              <Ic n="phone" size={18}/>
-              WhatsApp / تيليفون
-            </div>
-          </div>
-          <button onClick={onLogout} style={{width:'100%',padding:'0.75rem',borderRadius:'0.75rem',background:B.ink,color:'white',fontWeight:'700',border:'none',cursor:'pointer'}}>
-            خروج
-          </button>
-        </div>
       </div>
     </div>
   );
@@ -266,32 +238,37 @@ function ExpiredScreen({agency,onLogout}){
 function Landing({onLogin,onRegister}){
   return(
     <div style={{minHeight:'100vh',background:B.bg,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'2rem 1rem',position:'relative',overflow:'hidden'}}>
-      <div style={{position:'absolute',top:'-8rem',right:'-8rem',width:'30rem',height:'30rem',borderRadius:'50%',background:`radial-gradient(circle,${B.accent}22,transparent 70%)`}}/>
-      <div style={{textAlign:'center',position:'relative',maxWidth:'28rem'}}>
-        <Logo size={100}/>
-        <h1 style={{fontSize:'2rem',fontWeight:'900',color:'#1c1917',margin:'1.5rem 0 0.5rem'}}>منصة BGH للحسابات</h1>
-        <p style={{color:'#78716c',marginBottom:'1.5rem',fontSize:'0.95rem'}}>إدارة الإيديتورز، الزبائن، والفيديوهات في مكان واحد</p>
+      <div style={{position:'absolute',top:'-10rem',right:'-10rem',width:'35rem',height:'35rem',borderRadius:'50%',background:`radial-gradient(circle,${B.accent}15,transparent 60%)`}}/>
+      <div style={{textAlign:'center',position:'relative',maxWidth:'30rem'}}>
+        <Logo size={110}/>
+        <h1 style={{fontSize:'2.25rem',fontWeight:'900',color:B.text,margin:'1.5rem 0 0.5rem',lineHeight:1.2}}>منصة BGH</h1>
+        <p style={{color:B.muted,marginBottom:'1rem',fontSize:'1rem'}}>إدارة الإيديتورز والمدفوعات لوكالات التسويق</p>
+
+        <div style={{display:'inline-flex',alignItems:'center',gap:'0.5rem',padding:'0.4rem 1rem',borderRadius:'9999px',background:'rgba(176,74,47,0.15)',border:'1px solid rgba(176,74,47,0.3)',marginBottom:'2rem'}}>
+          <div style={{width:'6px',height:'6px',borderRadius:'50%',background:B.accent,animation:'pulse 2s infinite'}}/>
+          <span style={{fontSize:'0.75rem',fontWeight:'700',color:B.accent}}>BETA — مجاني خلال فترة التجربة</span>
+        </div>
 
         {/* Plans */}
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'0.5rem',marginBottom:'2rem'}}>
           {[
-            {plan:'مجاني',price:'0 دج',features:'2 إيديتور · 20 فيديو',color:'#6b7280',bg:'#f3f4f6'},
-            {plan:'Basic ⭐',price:'1,500 دج/شهر',features:'5 إيديتور · غير محدود',color:'#d97706',bg:'#fef3c7'},
-            {plan:'Pro 💎',price:'3,000 دج/شهر',features:'غير محدود كامل',color:'#7c3aed',bg:'#ede9fe'},
+            {plan:'مجاني 🆓',price:'0 دج',f:'2 إيديتور · 20 فيديو',c:'#888',bg:'rgba(255,255,255,0.05)'},
+            {plan:'Basic ⭐',price:'1,500 دج/شهر',f:'5 إيديتورز · غير محدود',c:'#fbbf24',bg:'rgba(251,191,36,0.1)'},
+            {plan:'Pro 💎',price:'3,000 دج/شهر',f:'غير محدود كامل',c:'#a78bfa',bg:'rgba(167,139,250,0.1)'},
           ].map(p=>(
-            <div key={p.plan} style={{padding:'0.75rem',borderRadius:'0.75rem',background:p.bg,textAlign:'center'}}>
-              <div style={{fontWeight:'800',color:p.color,fontSize:'0.75rem'}}>{p.plan}</div>
-              <div style={{fontWeight:'900',color:'#1c1917',fontSize:'0.875rem',margin:'0.25rem 0'}}>{p.price}</div>
-              <div style={{fontSize:'0.6rem',color:'#78716c'}}>{p.features}</div>
+            <div key={p.plan} style={{padding:'0.875rem 0.5rem',borderRadius:'0.75rem',background:p.bg,border:`1px solid ${p.c}33`,textAlign:'center'}}>
+              <div style={{fontWeight:'800',color:p.c,fontSize:'0.75rem',marginBottom:'0.25rem'}}>{p.plan}</div>
+              <div style={{fontWeight:'900',color:B.text,fontSize:'0.875rem',marginBottom:'0.25rem'}}>{p.price}</div>
+              <div style={{fontSize:'0.6rem',color:B.muted}}>{p.f}</div>
             </div>
           ))}
         </div>
 
         <div style={{display:'flex',flexDirection:'column',gap:'0.75rem'}}>
-          <button onClick={onRegister} style={{width:'100%',padding:'1rem',borderRadius:'0.75rem',background:B.ink,color:'white',fontWeight:'800',border:'none',cursor:'pointer',fontSize:'1rem',display:'flex',alignItems:'center',justifyContent:'center',gap:'0.5rem'}}>
-            <Ic n="building" size={20} color="white"/> ابدا مجاناً
+          <button onClick={onRegister} style={{width:'100%',padding:'1rem',borderRadius:'0.75rem',background:B.accent,color:'white',fontWeight:'800',border:'none',cursor:'pointer',fontSize:'1rem',display:'flex',alignItems:'center',justifyContent:'center',gap:'0.5rem'}}>
+            <Ic n="building" size={20} color="white"/> ابدا مجاناً — سجل وكالتك
           </button>
-          <button onClick={onLogin} style={{width:'100%',padding:'1rem',borderRadius:'0.75rem',background:'white',color:'#1c1917',fontWeight:'800',border:'1px solid #e7e5e4',cursor:'pointer',fontSize:'1rem'}}>
+          <button onClick={onLogin} style={{width:'100%',padding:'1rem',borderRadius:'0.75rem',background:'transparent',color:B.text,fontWeight:'800',border:`1px solid ${B.border}`,cursor:'pointer',fontSize:'1rem'}}>
             تسجيل الدخول
           </button>
         </div>
@@ -315,64 +292,131 @@ function Register({onBack,onSuccess}){
     finally{setLoading(false);}
   };
   return(
-    <AuthCard title="إنشاء حساب وكالة" sub="مجاني — لا حاجة لبطاقة بنكية">
+    <AuthCard title="إنشاء حساب وكالة" sub="مجاني تماماً — لا حاجة لبطاقة بنكية">
       <div style={{display:'flex',flexDirection:'column',gap:'1rem'}}>
         <Field label="اسم الوكالة">
           <div style={{position:'relative'}}>
-            <div style={{position:'absolute',right:'0.75rem',top:'50%',transform:'translateY(-50%)',display:'flex',pointerEvents:'none'}}><Ic n="building" size={14} color="#a8a29e"/></div>
+            <div style={{position:'absolute',right:'0.75rem',top:'50%',transform:'translateY(-50%)',display:'flex',pointerEvents:'none'}}><Ic n="building" size={14} color={B.muted}/></div>
             <input value={name} onChange={e=>setName(e.target.value)} placeholder="BGH Marketing" style={{...INP,paddingRight:'2.5rem'}}/>
           </div>
         </Field>
-        <Field label="البريد الإلكتروني">
+        <Field label="البريد الإلكتروني (للوكالة)">
           <div style={{position:'relative'}}>
-            <div style={{position:'absolute',right:'0.75rem',top:'50%',transform:'translateY(-50%)',display:'flex',pointerEvents:'none'}}><Ic n="mail" size={14} color="#a8a29e"/></div>
-            <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="example@agency.com" style={{...INP,paddingRight:'2.5rem'}}/>
+            <div style={{position:'absolute',right:'0.75rem',top:'50%',transform:'translateY(-50%)',display:'flex',pointerEvents:'none'}}><Ic n="mail" size={14} color={B.muted}/></div>
+            <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="agency@email.com" style={{...INP,paddingRight:'2.5rem'}}/>
           </div>
         </Field>
         <Field label="كلمة السر">
           <PwField value={pw} onChange={setPw} show={show} setShow={setShow} placeholder="4 حروف على الأقل" onEnter={submit}/>
         </Field>
-        {err&&<div style={{fontSize:'0.75rem',color:'#dc2626',fontWeight:'700',padding:'0.5rem',background:'#fef2f2',borderRadius:'0.5rem'}}>{err}</div>}
-        <button onClick={submit} disabled={loading} style={{width:'100%',padding:'0.875rem',borderRadius:'0.75rem',background:B.ink,color:'white',fontWeight:'700',border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'0.5rem'}}>
+        {err&&<div style={{fontSize:'0.75rem',color:B.danger,fontWeight:'700',padding:'0.5rem 0.75rem',background:'rgba(239,68,68,0.1)',borderRadius:'0.5rem',border:'1px solid rgba(239,68,68,0.2)'}}>{err}</div>}
+        <button onClick={submit} disabled={loading} style={{width:'100%',padding:'0.875rem',borderRadius:'0.75rem',background:B.accent,color:'white',fontWeight:'700',border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'0.5rem',opacity:loading?0.7:1}}>
           {loading?<><span className="spin" style={{display:'inline-block'}}><Ic n="loader" size={16} color="white"/></span>جاري التسجيل...</>:'ابدا مجاناً'}
         </button>
-        <button onClick={onBack} style={{background:'none',border:'none',cursor:'pointer',color:'#78716c',fontSize:'0.875rem',textAlign:'center'}}>← رجع</button>
+        <button onClick={onBack} style={{background:'none',border:'none',cursor:'pointer',color:B.muted,fontSize:'0.875rem',textAlign:'center'}}>← رجع</button>
       </div>
     </AuthCard>
   );
 }
 
 // ─── LOGIN ────────────────────────────────────────────────
-function Login({onBack,onSuccess,onSuperAdmin}){
-  const[email,setEmail]=useState('');const[pw,setPw]=useState('');
-  const[show,setShow]=useState(false);const[err,setErr]=useState('');const[loading,setLoading]=useState(false);
+function Login({onBack,onAgencyLogin,onEditorLogin,onSuperAdmin}){
+  const[role,setRole]=useState('agency'); // agency | editor
+  const[email,setEmail]=useState('');
+  const[agEmail,setAgEmail]=useState('');
+  const[pw,setPw]=useState('');
+  const[show,setShow]=useState(false);
+  const[err,setErr]=useState('');
+  const[loading,setLoading]=useState(false);
+
   const submit=async()=>{
-    if(!email||!pw)return setErr('دخل البريد الإلكتروني وكلمة السر');
+    if(!pw)return setErr('دخل كلمة السر');
     setLoading(true);setErr('');
+
     if(email===SUPER_EMAIL&&pw===SUPER_PASS){setLoading(false);onSuperAdmin();return;}
-    try{const ag=await DB.login(email.toLowerCase().trim(),pw);onSuccess(ag);}
-    catch(e){setErr(e.message);}
+
+    try{
+      if(role==='agency'){
+        if(!email.includes('@'))return setErr('دخل البريد الإلكتروني');
+        const ag=await DB.loginAgency(email.toLowerCase().trim(),pw);
+        onAgencyLogin(ag);
+      } else {
+        if(!agEmail.includes('@'))return setErr('دخل إيميل الوكالة');
+        const{agency,editor,appData}=await DB.loginEditor(agEmail,pw);
+        onEditorLogin(agency,editor,appData);
+      }
+    }catch(e){setErr(e.message);}
     finally{setLoading(false);}
   };
+
   return(
     <AuthCard title="تسجيل الدخول">
+      {/* Role tabs */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.375rem',padding:'0.25rem',background:'#111',borderRadius:'0.75rem',marginBottom:'1.25rem'}}>
+        {[{v:'agency',l:'وكالة',ic:'building'},{v:'editor',l:'إيديتور',ic:'video'}].map(r=>(
+          <button key={r.v} onClick={()=>{setRole(r.v);setErr('');setPw('');}}
+            style={{padding:'0.625rem',borderRadius:'0.5rem',fontWeight:'700',fontSize:'0.875rem',display:'flex',alignItems:'center',justifyContent:'center',gap:'0.5rem',border:'none',cursor:'pointer',background:role===r.v?B.accent:'transparent',color:role===r.v?'white':B.muted,transition:'all 0.15s'}}>
+            <Ic n={r.ic} size={15}/>{r.l}
+          </button>
+        ))}
+      </div>
+
       <div style={{display:'flex',flexDirection:'column',gap:'1rem'}}>
-        <Field label="البريد الإلكتروني">
-          <div style={{position:'relative'}}>
-            <div style={{position:'absolute',right:'0.75rem',top:'50%',transform:'translateY(-50%)',display:'flex',pointerEvents:'none'}}><Ic n="mail" size={14} color="#a8a29e"/></div>
-            <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="example@agency.com" style={{...INP,paddingRight:'2.5rem'}}/>
-          </div>
-        </Field>
+        {role==='agency'?(
+          <Field label="البريد الإلكتروني للوكالة">
+            <div style={{position:'relative'}}>
+              <div style={{position:'absolute',right:'0.75rem',top:'50%',transform:'translateY(-50%)',display:'flex',pointerEvents:'none'}}><Ic n="mail" size={14} color={B.muted}/></div>
+              <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="agency@email.com" style={{...INP,paddingRight:'2.5rem'}}/>
+            </div>
+          </Field>
+        ):(
+          <>
+            <Field label="إيميل الوكالة">
+              <div style={{position:'relative'}}>
+                <div style={{position:'absolute',right:'0.75rem',top:'50%',transform:'translateY(-50%)',display:'flex',pointerEvents:'none'}}><Ic n="building" size={14} color={B.muted}/></div>
+                <input type="email" value={agEmail} onChange={e=>setAgEmail(e.target.value)} placeholder="إيميل الوكالة تاوعك" style={{...INP,paddingRight:'2.5rem'}}/>
+              </div>
+            </Field>
+            <div style={{padding:'0.5rem 0.75rem',background:'rgba(176,74,47,0.1)',border:'1px solid rgba(176,74,47,0.2)',borderRadius:'0.5rem',fontSize:'0.75rem',color:B.accent}}>
+              💡 كلمة السر تاوعك حطها ليك المسير تاع الوكالة
+            </div>
+          </>
+        )}
+
         <Field label="كلمة السر">
           <PwField value={pw} onChange={setPw} show={show} setShow={setShow} placeholder="كلمة السر" onEnter={submit}/>
         </Field>
-        {err&&<div style={{fontSize:'0.75rem',color:'#dc2626',fontWeight:'700',padding:'0.5rem',background:'#fef2f2',borderRadius:'0.5rem'}}>{err}</div>}
-        <button onClick={submit} disabled={loading} style={{width:'100%',padding:'0.875rem',borderRadius:'0.75rem',background:B.ink,color:'white',fontWeight:'700',border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'0.5rem'}}>
+
+        {err&&<div style={{fontSize:'0.75rem',color:B.danger,fontWeight:'700',padding:'0.5rem 0.75rem',background:'rgba(239,68,68,0.1)',borderRadius:'0.5rem',border:'1px solid rgba(239,68,68,0.2)'}}>{err}</div>}
+
+        <button onClick={submit} disabled={loading} style={{width:'100%',padding:'0.875rem',borderRadius:'0.75rem',background:B.accent,color:'white',fontWeight:'700',border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'0.5rem',opacity:loading?0.7:1}}>
           {loading?<><span className="spin" style={{display:'inline-block'}}><Ic n="loader" size={16} color="white"/></span>جاري الدخول...</>:'دخول'}
         </button>
-        <button onClick={onBack} style={{background:'none',border:'none',cursor:'pointer',color:'#78716c',fontSize:'0.875rem',textAlign:'center'}}>← رجع</button>
+        <button onClick={onBack} style={{background:'none',border:'none',cursor:'pointer',color:B.muted,fontSize:'0.875rem',textAlign:'center'}}>← رجع</button>
       </div>
     </AuthCard>
+  );
+}
+
+// ─── EXPIRED SCREEN ───────────────────────────────────────
+function ExpiredScreen({agency,onLogout}){
+  const sus=isSuspended(agency);
+  return(
+    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:B.bg,padding:'2rem 1rem'}}>
+      <div style={{textAlign:'center',maxWidth:'24rem',width:'100%'}}>
+        <Logo size={80}/>
+        <div style={{marginTop:'2rem',padding:'2rem',background:B.card,borderRadius:'1.5rem',border:`1px solid ${B.border}`}}>
+          <div style={{fontSize:'3rem',marginBottom:'1rem'}}>{sus?'🚫':'⏰'}</div>
+          <h2 style={{fontSize:'1.5rem',fontWeight:'900',color:B.text,marginBottom:'0.5rem'}}>{sus?'الحساب موقوف':'انتهى الاشتراك'}</h2>
+          <p style={{color:B.muted,marginBottom:'1.5rem',fontSize:'0.875rem'}}>{sus?'حسابك موقوف مؤقتاً. تواصل معنا.':'اشتراكك انتهى. تواصل معنا للتجديد.'}</p>
+          <div style={{background:'#111',borderRadius:'1rem',padding:'1rem',marginBottom:'1.5rem',display:'flex',alignItems:'center',justifyContent:'center',gap:'0.75rem'}}>
+            <Ic n="phone" size={20} color={B.accent}/>
+            <span style={{fontWeight:'800',color:B.text}}>تواصل معنا على WhatsApp</span>
+          </div>
+          <button onClick={onLogout} style={{width:'100%',padding:'0.75rem',borderRadius:'0.75rem',background:B.border,color:B.text,fontWeight:'700',border:'none',cursor:'pointer'}}>خروج</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -384,111 +428,91 @@ function SuperAdmin({onLogout}){
   const[agData,setAgData]=useState(null);
   const[editAg,setEditAg]=useState(null);
   const[toast,setToast]=useState(null);
-
   const showToast=(msg,type='success')=>{setToast({msg,type});setTimeout(()=>setToast(null),2500);};
 
-  const load=()=>DB.getAllAgencies().then(d=>{setAgencies(d);setLoading(false);});
-  useEffect(()=>{load();},[]);
+  useEffect(()=>{DB.getAllAgencies().then(d=>{setAgencies(d);setLoading(false);});},[]);
 
-  const viewAgency=async ag=>{
-    setSelected(ag);
-    const d=await DB.getAgencyData(ag.id);
-    setAgData(d);
-  };
-
+  const viewAgency=async ag=>{setSelected(ag);const d=await DB.getAgencyData(ag.id);setAgData(d);};
   const updateAgency=async(id,patch)=>{
     await DB.updateAgency(id,patch);
     setAgencies(a=>a.map(x=>x.id===id?{...x,...patch}:x));
     if(selected?.id===id)setSelected(s=>({...s,...patch}));
-    showToast('تم التحديث ✅');
-    setEditAg(null);
+    showToast('تم التحديث ✅');setEditAg(null);
   };
-
   const deleteAgency=async id=>{
-    if(!confirm('متأكد بلي تحب تحذف هذه الوكالة؟'))return;
+    if(!confirm('متأكد؟'))return;
     await DB.deleteAgency(id);
     setAgencies(a=>a.filter(x=>x.id!==id));
     if(selected?.id===id){setSelected(null);setAgData(null);}
     showToast('تم الحذف');
   };
 
-  const stats={
-    total:agencies.length,
-    active:agencies.filter(a=>a.is_active&&!isExpired(a)).length,
-    expired:agencies.filter(a=>isExpired(a)).length,
-    suspended:agencies.filter(a=>!a.is_active).length,
-    paid:agencies.filter(a=>a.plan!=='free').length,
-  };
+  const stats={total:agencies.length,active:agencies.filter(a=>a.is_active&&!isExpired(a)).length,paid:agencies.filter(a=>a.plan!=='free').length};
 
-  if(loading)return(
-    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:B.bg}}>
-      <Logo size={70}/>
-    </div>
-  );
+  if(loading)return<div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:B.bg}}><Logo size={70}/></div>;
 
   return(
     <div style={{minHeight:'100vh',background:B.bg,fontFamily:"'Cairo',sans-serif"}}>
-      <header style={{borderBottom:'1px solid #e7e5e4',background:'rgba(255,255,255,0.9)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:40}}>
+      <header style={{borderBottom:`1px solid ${B.border}`,background:'rgba(26,26,26,0.9)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:40}}>
         <div style={{maxWidth:'80rem',margin:'0 auto',padding:'0.75rem 1rem',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
           <div style={{display:'flex',alignItems:'center',gap:'0.75rem'}}>
             <Logo size={38}/>
             <div>
-              <div style={{fontWeight:'800',color:'#1c1917',fontSize:'0.95rem'}}>Super Admin</div>
-              <div style={{fontSize:'0.65rem',color:'#78716c',display:'flex',alignItems:'center',gap:'0.25rem'}}>
-                <Ic n="crown" size={10}/> لوحة تحكم المدير العام
-              </div>
+              <div style={{fontWeight:'800',color:B.text,fontSize:'0.95rem'}}>Super Admin</div>
+              <div style={{fontSize:'0.65rem',color:B.muted,display:'flex',alignItems:'center',gap:'0.25rem'}}><Ic n="crown" size={10}/> لوحة تحكم المدير العام</div>
             </div>
           </div>
-          <button onClick={onLogout} style={{padding:'0.5rem 1rem',borderRadius:'9999px',border:'none',background:'#fef2f2',color:'#dc2626',fontWeight:'700',cursor:'pointer',display:'flex',alignItems:'center',gap:'0.5rem',fontSize:'0.8rem'}}>
-            <Ic n="logout" size={14} color="#dc2626"/> خروج
+          <button onClick={onLogout} style={{padding:'0.5rem 1rem',borderRadius:'9999px',border:'none',background:'rgba(239,68,68,0.1)',color:B.danger,fontWeight:'700',cursor:'pointer',display:'flex',alignItems:'center',gap:'0.5rem',fontSize:'0.8rem'}}>
+            <Ic n="logout" size={14} color={B.danger}/> خروج
           </button>
         </div>
       </header>
 
       <main style={{maxWidth:'80rem',margin:'0 auto',padding:'1.5rem 1rem'}}>
-        {/* Stats */}
-        <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:'0.75rem',marginBottom:'1.5rem'}}>
-          <StatCard label="إجمالي الوكالات" value={stats.total} ic="building" raw/>
-          <StatCard label="وكالات نشطة" value={stats.active} ic="checkCircle" grn raw/>
-          <StatCard label="مشتركات مدفوعة" value={stats.paid} ic="crown" raw/>
-          <StatCard label="منتهية/موقوفة" value={stats.expired+stats.suspended} ic="alertCircle" hl raw/>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'0.75rem',marginBottom:'1.5rem'}}>
+          {[{l:'إجمالي الوكالات',v:stats.total,ic:'building'},{l:'وكالات نشطة',v:stats.active,ic:'checkCircle'},{l:'مشتركات مدفوعة',v:stats.paid,ic:'crown'}].map(s=>(
+            <div key={s.l} style={{background:B.card,border:`1px solid ${B.border}`,borderRadius:'1rem',padding:'1rem'}}>
+              <div style={{display:'flex',justifyContent:'space-between',marginBottom:'0.5rem'}}>
+                <span style={{fontSize:'0.7rem',color:B.muted,fontWeight:'600'}}>{s.l}</span>
+                <Ic n={s.ic} size={16} color={B.muted}/>
+              </div>
+              <div style={{fontSize:'2rem',fontWeight:'900',color:B.text}}>{s.v}</div>
+            </div>
+          ))}
         </div>
 
         <div style={{display:'grid',gridTemplateColumns:selected?'1fr 1fr':'1fr',gap:'1.5rem'}}>
-          {/* List */}
-          <div style={{background:'white',borderRadius:'1rem',border:'1px solid #e7e5e4',overflow:'hidden'}}>
-            <div style={{padding:'1rem 1.25rem',borderBottom:'1px solid #f5f5f4',fontWeight:'800',fontSize:'1rem',color:'#1c1917'}}>
+          <div style={{background:B.card,borderRadius:'1rem',border:`1px solid ${B.border}`,overflow:'hidden'}}>
+            <div style={{padding:'1rem 1.25rem',borderBottom:`1px solid ${B.border}`,fontWeight:'800',fontSize:'1rem',color:B.text}}>
               الوكالات ({agencies.length})
             </div>
             {agencies.length===0
-              ?<div style={{padding:'3rem',textAlign:'center',color:'#a8a29e',fontSize:'0.875rem'}}>ما كاينش وكالات بعد</div>
+              ?<div style={{padding:'3rem',textAlign:'center',color:B.muted,fontSize:'0.875rem'}}>ما كاينش وكالات بعد</div>
               :agencies.map(ag=>{
                 const pl=planLabel(ag.plan);
-                const exp=isExpired(ag);
-                const sus=isSuspended(ag);
-                const dl=daysLeft(ag);
+                const exp=isExpired(ag);const sus=isSuspended(ag);const dl=daysLeft(ag);
                 return(
-                  <div key={ag.id} style={{padding:'0.875rem 1.25rem',borderBottom:'1px solid #f5f5f4',background:selected?.id===ag.id?'#fafaf9':'white'}}>
+                  <div key={ag.id} style={{padding:'0.875rem 1.25rem',borderBottom:`1px solid ${B.border}`,background:selected?.id===ag.id?'#222':'transparent'}}>
                     <div style={{display:'flex',alignItems:'center',gap:'0.75rem'}}>
-                      <div style={{width:'2.5rem',height:'2.5rem',borderRadius:'50%',display:'grid',placeItems:'center',fontWeight:'700',flexShrink:0,background:B.soft,color:B.accent,fontSize:'1rem'}}>
+                      <div style={{width:'2.5rem',height:'2.5rem',borderRadius:'50%',display:'grid',placeItems:'center',fontWeight:'700',flexShrink:0,background:B.accentSoft,color:B.accent}}>
                         {ag.name.charAt(0)}
                       </div>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{display:'flex',alignItems:'center',gap:'0.5rem',flexWrap:'wrap'}}>
-                          <span style={{fontWeight:'700',color:'#1c1917',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{ag.name}</span>
-                          <span style={{fontSize:'0.65rem',fontWeight:'700',padding:'0.1rem 0.4rem',borderRadius:'9999px',background:pl.bg,color:pl.color}}>{pl.label}</span>
-                          {sus&&<span style={{fontSize:'0.65rem',fontWeight:'700',padding:'0.1rem 0.4rem',borderRadius:'9999px',background:'#fef2f2',color:'#dc2626'}}>موقوف</span>}
-                          {exp&&!sus&&<span style={{fontSize:'0.65rem',fontWeight:'700',padding:'0.1rem 0.4rem',borderRadius:'9999px',background:'#fef2f2',color:'#dc2626'}}>منتهي</span>}
+                          <span style={{fontWeight:'700',color:B.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{ag.name}</span>
+                          <span style={{fontSize:'0.6rem',fontWeight:'700',padding:'0.1rem 0.4rem',borderRadius:'9999px',background:pl.bg,color:pl.color}}>{pl.label}</span>
+                          {sus&&<span style={{fontSize:'0.6rem',fontWeight:'700',padding:'0.1rem 0.4rem',borderRadius:'9999px',background:'rgba(239,68,68,0.15)',color:B.danger}}>موقوف</span>}
+                          {exp&&!sus&&<span style={{fontSize:'0.6rem',fontWeight:'700',padding:'0.1rem 0.4rem',borderRadius:'9999px',background:'rgba(239,68,68,0.15)',color:B.danger}}>منتهي</span>}
                         </div>
-                        <div style={{fontSize:'0.7rem',color:'#78716c'}}>{ag.email}</div>
-                        {dl!==null&&!exp&&<div style={{fontSize:'0.65rem',color:dl<7?'#dc2626':'#059669',fontWeight:'600'}}>باقي {dl} يوم</div>}
+                        <div style={{fontSize:'0.7rem',color:B.muted}}>{ag.email}</div>
+                        {dl!==null&&!exp&&<div style={{fontSize:'0.65rem',color:dl<7?B.danger:B.success,fontWeight:'600'}}>باقي {dl} يوم</div>}
                       </div>
                       <div style={{display:'flex',gap:'0.25rem',flexShrink:0}}>
-                        <button onClick={()=>viewAgency(ag)} style={{padding:'0.35rem 0.6rem',border:'none',borderRadius:'0.5rem',background:selected?.id===ag.id?B.ink:'#f5f5f4',color:selected?.id===ag.id?'white':'#1c1917',cursor:'pointer',fontSize:'0.7rem',fontWeight:'700'}}>
+                        <button onClick={()=>viewAgency(ag)} style={{padding:'0.35rem 0.6rem',border:'none',borderRadius:'0.5rem',background:selected?.id===ag.id?B.accent:`${B.border}`,color:selected?.id===ag.id?'white':B.text,cursor:'pointer',fontSize:'0.7rem',fontWeight:'700'}}>
                           {selected?.id===ag.id?'مفتوح':'شوف'}
                         </button>
-                        <button onClick={()=>setEditAg(ag)} style={{padding:'0.35rem',border:'none',background:'none',cursor:'pointer',color:'#78716c',display:'flex'}}><Ic n="pencil" size={14}/></button>
-                        <button onClick={()=>deleteAgency(ag.id)} style={{padding:'0.35rem',border:'none',background:'none',cursor:'pointer',color:'#dc2626',display:'flex'}}><Ic n="trash" size={14} color="#dc2626"/></button>
+                        <button onClick={()=>setEditAg(ag)} style={{padding:'0.35rem',border:'none',background:'none',cursor:'pointer',color:B.muted,display:'flex'}}><Ic n="pencil" size={14}/></button>
+                        <button onClick={()=>deleteAgency(ag.id)} style={{padding:'0.35rem',border:'none',background:'none',cursor:'pointer',color:B.danger,display:'flex'}}><Ic n="trash" size={14} color={B.danger}/></button>
                       </div>
                     </div>
                   </div>
@@ -497,45 +521,38 @@ function SuperAdmin({onLogout}){
             }
           </div>
 
-          {/* Agency Detail */}
           {selected&&agData&&(
-            <div style={{background:'white',borderRadius:'1rem',border:'1px solid #e7e5e4',overflow:'hidden'}}>
-              <div style={{padding:'1rem 1.25rem',borderBottom:'1px solid #f5f5f4',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div style={{background:B.card,borderRadius:'1rem',border:`1px solid ${B.border}`,overflow:'hidden'}}>
+              <div style={{padding:'1rem 1.25rem',borderBottom:`1px solid ${B.border}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <div>
-                  <div style={{fontWeight:'800',fontSize:'1rem',color:'#1c1917'}}>{selected.name}</div>
-                  <div style={{fontSize:'0.75rem',color:'#78716c'}}>{selected.email}</div>
+                  <div style={{fontWeight:'800',fontSize:'1rem',color:B.text}}>{selected.name}</div>
+                  <div style={{fontSize:'0.75rem',color:B.muted}}>{selected.email}</div>
                 </div>
-                <button onClick={()=>{setSelected(null);setAgData(null);}} style={{background:'none',border:'none',cursor:'pointer',display:'flex'}}><Ic n="x" size={18}/></button>
+                <button onClick={()=>{setSelected(null);setAgData(null);}} style={{background:'none',border:'none',cursor:'pointer',display:'flex',color:B.muted}}><Ic n="x" size={18}/></button>
               </div>
               <div style={{padding:'1rem'}}>
                 <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'0.5rem',marginBottom:'1rem'}}>
-                  <div style={{background:'#f5f5f4',borderRadius:'0.75rem',padding:'0.75rem',textAlign:'center'}}>
-                    <div style={{fontSize:'1.25rem',fontWeight:'900',color:B.accent}}>{agData.editors?.length||0}</div>
-                    <div style={{fontSize:'0.65rem',color:'#78716c'}}>إيديتور</div>
-                  </div>
-                  <div style={{background:'#f5f5f4',borderRadius:'0.75rem',padding:'0.75rem',textAlign:'center'}}>
-                    <div style={{fontSize:'1.25rem',fontWeight:'900',color:B.accent}}>{agData.clients?.length||0}</div>
-                    <div style={{fontSize:'0.65rem',color:'#78716c'}}>زبون</div>
-                  </div>
-                  <div style={{background:'#f5f5f4',borderRadius:'0.75rem',padding:'0.75rem',textAlign:'center'}}>
-                    <div style={{fontSize:'1.25rem',fontWeight:'900',color:B.accent}}>{agData.videos?.length||0}</div>
-                    <div style={{fontSize:'0.65rem',color:'#78716c'}}>فيديو</div>
-                  </div>
+                  {[{l:'إيديتور',v:agData.editors?.length||0},{l:'زبون',v:agData.clients?.length||0},{l:'فيديو',v:agData.videos?.length||0}].map(s=>(
+                    <div key={s.l} style={{background:'#111',borderRadius:'0.75rem',padding:'0.75rem',textAlign:'center'}}>
+                      <div style={{fontSize:'1.5rem',fontWeight:'900',color:B.accent}}>{s.v}</div>
+                      <div style={{fontSize:'0.65rem',color:B.muted}}>{s.l}</div>
+                    </div>
+                  ))}
                 </div>
-                <div style={{fontWeight:'700',fontSize:'0.875rem',color:'#1c1917',marginBottom:'0.5rem'}}>آخر الفيديوهات</div>
+                <div style={{fontWeight:'700',fontSize:'0.875rem',color:B.text,marginBottom:'0.5rem'}}>آخر الفيديوهات</div>
                 {!agData.videos?.length
-                  ?<div style={{color:'#a8a29e',fontSize:'0.875rem',textAlign:'center',padding:'1rem'}}>ما كاينش فيديوهات</div>
+                  ?<div style={{color:B.muted,fontSize:'0.875rem',textAlign:'center',padding:'1rem'}}>ما كاينش فيديوهات</div>
                   :<div style={{maxHeight:'250px',overflowY:'auto'}}>
                     {agData.videos.slice(0,10).map(v=>{
                       const eMap=Object.fromEntries((agData.editors||[]).map(e=>[e.id,e.name]));
                       const cMap=Object.fromEntries((agData.clients||[]).map(c=>[c.id,c.name]));
                       return(
-                        <div key={v.id} style={{padding:'0.6rem',borderBottom:'1px solid #f5f5f4',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                        <div key={v.id} style={{padding:'0.6rem',borderBottom:`1px solid ${B.border}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                           <div>
-                            <div style={{fontWeight:'600',fontSize:'0.8rem',color:'#1c1917'}}>{v.title||'بدون عنوان'}</div>
-                            <div style={{fontSize:'0.65rem',color:'#78716c'}}>{eMap[v.editorId]||'—'} · {cMap[v.clientId]||'—'}</div>
+                            <div style={{fontWeight:'600',fontSize:'0.8rem',color:B.text}}>{v.title||'بدون عنوان'}</div>
+                            <div style={{fontSize:'0.65rem',color:B.muted}}>{eMap[v.editorId]||'—'} · {cMap[v.clientId]||'—'}</div>
                           </div>
-                          <span style={{fontWeight:'700',fontSize:'0.8rem',fontVariantNumeric:'tabular-nums'}}>{fmt(v.price)}<span style={{fontSize:'0.6rem',color:'#a8a29e'}}> دج</span></span>
+                          <span style={{fontWeight:'700',fontSize:'0.8rem',color:B.text,fontVariantNumeric:'tabular-nums'}}>{fmt(v.price)}<span style={{fontSize:'0.6rem',color:B.muted}}> دج</span></span>
                         </div>
                       );
                     })}
@@ -547,13 +564,10 @@ function SuperAdmin({onLogout}){
         </div>
       </main>
 
-      {/* Edit Agency Modal */}
-      {editAg&&(
-        <EditAgencyModal ag={editAg} onClose={()=>setEditAg(null)} onSave={(id,patch)=>updateAgency(id,patch)}/>
-      )}
+      {editAg&&<EditAgencyModal ag={editAg} onClose={()=>setEditAg(null)} onSave={(id,patch)=>updateAgency(id,patch)}/>}
 
       {toast&&(
-        <div style={{position:'fixed',bottom:'1.5rem',left:'50%',transform:'translateX(-50%)',padding:'0.75rem 1.25rem',borderRadius:'9999px',color:'white',fontWeight:'600',fontSize:'0.875rem',boxShadow:'0 10px 15px rgba(0,0,0,0.1)',zIndex:50,background:toast.type==='error'?'#dc2626':B.ink,whiteSpace:'nowrap'}}>
+        <div style={{position:'fixed',bottom:'1.5rem',left:'50%',transform:'translateX(-50%)',padding:'0.75rem 1.25rem',borderRadius:'9999px',color:'white',fontWeight:'600',fontSize:'0.875rem',boxShadow:'0 10px 15px rgba(0,0,0,0.5)',zIndex:50,background:toast.type==='error'?B.danger:B.accent,whiteSpace:'nowrap'}}>
           {toast.msg}
         </div>
       )}
@@ -561,74 +575,53 @@ function SuperAdmin({onLogout}){
   );
 }
 
-// ─── EDIT AGENCY MODAL ────────────────────────────────────
 function EditAgencyModal({ag,onClose,onSave}){
   const[plan,setPlan]=useState(ag.plan||'free');
   const[days,setDays]=useState('30');
   const[active,setActive]=useState(ag.is_active!==false);
   const[notes,setNotes]=useState(ag.notes||'');
-
   const save=()=>{
     const patch={plan,is_active:active,notes};
-    if(plan!=='free'&&days){
-      const exp=new Date();
-      exp.setDate(exp.getDate()+Number(days));
-      patch.plan_expires_at=exp.toISOString();
-    }
-    if(plan==='free'){patch.plan_expires_at=null;}
+    if(plan!=='free'&&days){const e=new Date();e.setDate(e.getDate()+Number(days));patch.plan_expires_at=e.toISOString();}
+    if(plan==='free')patch.plan_expires_at=null;
     onSave(ag.id,patch);
   };
-
   return(
     <Modal onClose={onClose} title={`إدارة: ${ag.name}`}>
       <div style={{display:'flex',flexDirection:'column',gap:'1rem'}}>
-
-        {/* Plan */}
         <Field label="الخطة">
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'0.5rem'}}>
-            {[{v:'free',l:'مجاني',c:'#6b7280',bg:'#f3f4f6'},{v:'basic',l:'Basic ⭐',c:'#d97706',bg:'#fef3c7'},{v:'pro',l:'Pro 💎',c:'#7c3aed',bg:'#ede9fe'}].map(p=>(
+            {[{v:'free',l:'مجاني',c:'#888'},{v:'basic',l:'Basic ⭐',c:'#fbbf24'},{v:'pro',l:'Pro 💎',c:'#a78bfa'}].map(p=>(
               <button key={p.v} onClick={()=>setPlan(p.v)}
-                style={{padding:'0.625rem',borderRadius:'0.75rem',border:`2px solid ${plan===p.v?p.c:'transparent'}`,background:p.bg,color:p.c,fontWeight:'700',cursor:'pointer',fontSize:'0.8rem'}}>
+                style={{padding:'0.625rem',borderRadius:'0.75rem',border:`2px solid ${plan===p.v?p.c:B.border}`,background:plan===p.v?`${p.c}22`:'transparent',color:p.c,fontWeight:'700',cursor:'pointer',fontSize:'0.8rem'}}>
                 {p.l}
               </button>
             ))}
           </div>
         </Field>
-
-        {/* Duration */}
         {plan!=='free'&&(
-          <Field label="مدة الاشتراك (أيام)">
+          <Field label="مدة الاشتراك">
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'0.5rem'}}>
               {['30','90','365'].map(d=>(
                 <button key={d} onClick={()=>setDays(d)}
-                  style={{padding:'0.5rem',borderRadius:'0.75rem',border:`2px solid ${days===d?B.ink:'#e7e5e4'}`,background:days===d?B.ink:'white',color:days===d?'white':'#1c1917',fontWeight:'700',cursor:'pointer',fontSize:'0.8rem'}}>
+                  style={{padding:'0.5rem',borderRadius:'0.75rem',border:`2px solid ${days===d?B.accent:B.border}`,background:days===d?B.accentSoft:'transparent',color:days===d?B.accent:B.text,fontWeight:'700',cursor:'pointer',fontSize:'0.8rem'}}>
                   {d==='30'?'شهر':d==='90'?'3 أشهر':'سنة'}
                 </button>
               ))}
             </div>
           </Field>
         )}
-
-        {/* Status */}
-        <label style={{display:'flex',alignItems:'center',gap:'0.75rem',padding:'0.875rem',background:active?'#f0fdf4':'#fef2f2',borderRadius:'0.75rem',cursor:'pointer'}}>
-          <input type="checkbox" checked={active} onChange={e=>setActive(e.target.checked)} style={{width:'1.25rem',height:'1.25rem',accentColor:'#059669'}}/>
+        <label style={{display:'flex',alignItems:'center',gap:'0.75rem',padding:'0.875rem',background:active?'rgba(34,197,94,0.1)':'rgba(239,68,68,0.1)',borderRadius:'0.75rem',cursor:'pointer',border:`1px solid ${active?'rgba(34,197,94,0.2)':'rgba(239,68,68,0.2)'}`}}>
+          <input type="checkbox" checked={active} onChange={e=>setActive(e.target.checked)} style={{width:'1.25rem',height:'1.25rem',accentColor:B.success}}/>
           <div>
-            <div style={{fontWeight:'700',color:active?'#059669':'#dc2626',fontSize:'0.875rem'}}>
-              {active?'✅ الحساب نشط':'🚫 الحساب موقوف'}
-            </div>
-            <div style={{fontSize:'0.7rem',color:'#78716c'}}>
-              {active?'الوكالة تقدر تدخل وتستعمل المنصة':'الوكالة محجوبة من الدخول'}
-            </div>
+            <div style={{fontWeight:'700',color:active?B.success:B.danger,fontSize:'0.875rem'}}>{active?'✅ الحساب نشط':'🚫 الحساب موقوف'}</div>
+            <div style={{fontSize:'0.7rem',color:B.muted}}>{active?'الوكالة تقدر تدخل':'الوكالة محجوبة'}</div>
           </div>
         </label>
-
-        {/* Notes */}
-        <Field label="ملاحظات (اختياري)">
-          <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="مثال: دفع بتاريخ 01/06/2025..."
-            style={{...INP,height:'70px',resize:'none'}}/>
+        <Field label="ملاحظات">
+          <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="مثال: دفع بتاريخ 01/06/2025..." style={{...INP,height:'70px',resize:'none'}}/>
         </Field>
-
-        <button onClick={save} style={{width:'100%',padding:'0.875rem',borderRadius:'0.75rem',background:B.ink,color:'white',fontWeight:'700',border:'none',cursor:'pointer'}}>
+        <button onClick={save} style={{width:'100%',padding:'0.875rem',borderRadius:'0.75rem',background:B.accent,color:'white',fontWeight:'700',border:'none',cursor:'pointer'}}>
           حفظ التعديلات
         </button>
       </div>
@@ -638,7 +631,7 @@ function EditAgencyModal({ag,onClose,onSave}){
 
 // ─── AGENCY APP ───────────────────────────────────────────
 function AgencyApp({agency,onLogout}){
-  const[data,setData]=useState({editors:[],clients:[],videos:[]});
+  const[data,setData]=useState(EMPTY);
   const[loading,setLoading]=useState(true);
   const[saving,setSaving]=useState(false);
   const[tab,setTab]=useState('dashboard');
@@ -649,14 +642,13 @@ function AgencyApp({agency,onLogout}){
   const persist=async next=>{
     setData(next);setSaving(true);
     try{await DB.saveData(agency.id,next);}
-    catch(e){showToast('فشل الحفظ','error');}
+    catch(e){showToast('فشل الحفظ — تحقق من الاتصال','error');}
     finally{setSaving(false);}
   };
 
-  const showToast=(msg,type='success')=>{setToast({msg,type});setTimeout(()=>setToast(null),2500);};
+  const showToast=(msg,type='success')=>{setToast({msg,type});setTimeout(()=>setToast(null),3000);};
 
-  // Check limits for free plan
-  const canAdd=(type)=>{
+  const canAdd=type=>{
     if(agency.plan!=='free')return true;
     if(type==='editor')return data.editors.length<FREE_LIMITS.editors;
     if(type==='client')return data.clients.length<FREE_LIMITS.clients;
@@ -672,76 +664,71 @@ function AgencyApp({agency,onLogout}){
   ];
 
   const addEditor=(name,pw)=>{
-    if(!canAdd('editor'))return showToast(`الخطة المجانية: ${FREE_LIMITS.editors} إيديتور فقط. اشترك للترقية!`,'error');
-    persist({...data,editors:[...data.editors,{id:uid(),name,password:hash(pw)}]});showToast('تم إضافة الإيديتور');
+    if(!canAdd('editor'))return showToast(`وصلت للحد المجاني (${FREE_LIMITS.editors}). تواصل معنا للترقية!`,'error');
+    persist({...data,editors:[...data.editors,{id:uid(),name,password:hash(pw)}]});showToast('تم إضافة الإيديتور ✅');
   };
   const updEditor=(id,patch)=>persist({...data,editors:data.editors.map(e=>e.id===id?{...e,...patch}:e)});
-  const delEditor=(id)=>{if(!confirm('متأكد؟'))return;persist({...data,editors:data.editors.filter(e=>e.id!==id),videos:data.videos.filter(v=>v.editorId!==id)});showToast('تم الحذف');};
-  const addClient=(name)=>{
-    if(!canAdd('client'))return showToast(`الخطة المجانية: ${FREE_LIMITS.clients} زبائن فقط. اشترك للترقية!`,'error');
-    persist({...data,clients:[...data.clients,{id:uid(),name}]});showToast('تم إضافة الزبون');
+  const delEditor=id=>{if(!confirm('متأكد؟'))return;persist({...data,editors:data.editors.filter(e=>e.id!==id),videos:data.videos.filter(v=>v.editorId!==id)});showToast('تم الحذف');};
+  const addClient=name=>{
+    if(!canAdd('client'))return showToast(`وصلت للحد المجاني (${FREE_LIMITS.clients}). تواصل معنا للترقية!`,'error');
+    persist({...data,clients:[...data.clients,{id:uid(),name}]});showToast('تم إضافة الزبون ✅');
   };
   const updClient=(id,name)=>persist({...data,clients:data.clients.map(c=>c.id===id?{...c,name}:c)});
-  const delClient=(id)=>{if(!confirm('متأكد؟'))return;persist({...data,clients:data.clients.filter(c=>c.id!==id),videos:data.videos.filter(v=>v.clientId!==id)});showToast('تم الحذف');};
-  const addVideo=(v)=>{
-    if(!canAdd('video'))return showToast(`الخطة المجانية: ${FREE_LIMITS.videos} فيديو فقط. اشترك للترقية!`,'error');
-    persist({...data,videos:[{id:uid(),...v,paid:false,createdAt:new Date().toISOString()},...data.videos]});showToast('تم تسجيل الفيديو');
+  const delClient=id=>{if(!confirm('متأكد؟'))return;persist({...data,clients:data.clients.filter(c=>c.id!==id),videos:data.videos.filter(v=>v.clientId!==id)});showToast('تم الحذف');};
+  const addVideo=v=>{
+    if(!canAdd('video'))return showToast(`وصلت للحد المجاني (${FREE_LIMITS.videos} فيديو). تواصل معنا للترقية!`,'error');
+    persist({...data,videos:[{id:uid(),...v,paid:false,createdAt:new Date().toISOString()},...data.videos]});showToast('تم تسجيل الفيديو ✅');
   };
   const updVideo=(id,patch)=>persist({...data,videos:data.videos.map(x=>x.id===id?{...x,...patch}:x)});
-  const delVideo=(id)=>{if(!confirm('متأكد؟'))return;persist({...data,videos:data.videos.filter(x=>x.id!==id)});showToast('تم الحذف');};
-  const togglePaid=(id)=>{const v=data.videos.find(x=>x.id===id);persist({...data,videos:data.videos.map(x=>x.id===id?{...x,paid:!v.paid}:x)});};
+  const delVideo=id=>{if(!confirm('متأكد؟'))return;persist({...data,videos:data.videos.filter(x=>x.id!==id)});showToast('تم الحذف');};
+  const togglePaid=id=>{const v=data.videos.find(x=>x.id===id);persist({...data,videos:data.videos.map(x=>x.id===id?{...x,paid:!v.paid}:x)});};
 
-  const pl=planLabel(agency.plan);
-  const dl=daysLeft(agency);
+  const pl=planLabel(agency.plan);const dl=daysLeft(agency);
 
   if(loading)return(
     <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:B.bg,flexDirection:'column',gap:'1rem'}}>
       <Logo size={70}/>
-      <div style={{color:'#78716c',fontSize:'0.875rem'}}>جاري التحميل...</div>
+      <div style={{color:B.muted,fontSize:'0.875rem'}}>جاري التحميل...</div>
     </div>
   );
 
   return(
     <div style={{minHeight:'100vh',background:B.bg,fontFamily:"'Cairo',sans-serif"}}>
-      <header style={{borderBottom:'1px solid #e7e5e4',background:'rgba(255,255,255,0.85)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:40}}>
+      <header style={{borderBottom:`1px solid ${B.border}`,background:'rgba(26,26,26,0.9)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:40}}>
         <div style={{maxWidth:'80rem',margin:'0 auto',padding:'0.75rem 1rem',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'0.75rem'}}>
           <div style={{display:'flex',alignItems:'center',gap:'0.75rem'}}>
             <Logo size={38}/>
             <div>
-              <div style={{fontWeight:'800',fontSize:'0.95rem',color:'#1c1917',lineHeight:1}}>{agency.name}</div>
-              <div style={{fontSize:'0.65rem',color:'#78716c',display:'flex',alignItems:'center',gap:'0.35rem',marginTop:'2px'}}>
+              <div style={{fontWeight:'800',fontSize:'0.95rem',color:B.text,lineHeight:1}}>{agency.name}</div>
+              <div style={{fontSize:'0.65rem',color:B.muted,display:'flex',alignItems:'center',gap:'0.35rem',marginTop:'2px'}}>
                 <span style={{padding:'0.1rem 0.4rem',borderRadius:'9999px',background:pl.bg,color:pl.color,fontWeight:'700'}}>{pl.label}</span>
-                {dl!==null&&<span style={{color:dl<7?'#dc2626':'#78716c'}}>· {dl} يوم باقي</span>}
-                {saving&&<span>· يحفظ...</span>}
+                {dl!==null&&<span style={{color:dl<7?B.danger:B.muted}}>· {dl} يوم</span>}
+                {saving&&<span style={{color:B.accent}}>· يحفظ...</span>}
               </div>
             </div>
           </div>
           <div style={{display:'flex',alignItems:'center',gap:'0.5rem'}}>
-            <nav style={{display:'flex',gap:'0.2rem',background:'#f5f5f4',borderRadius:'9999px',padding:'0.25rem',overflowX:'auto'}}>
+            <nav style={{display:'flex',gap:'0.2rem',background:'#111',borderRadius:'9999px',padding:'0.25rem',overflowX:'auto'}}>
               {tabs.map(t=>(
                 <button key={t.id} onClick={()=>setTab(t.id)}
-                  style={{display:'flex',alignItems:'center',gap:'0.3rem',padding:'0.4rem 0.7rem',borderRadius:'9999px',border:'none',cursor:'pointer',fontWeight:'700',fontSize:'0.72rem',whiteSpace:'nowrap',background:tab===t.id?B.ink:'transparent',color:tab===t.id?'white':'#78716c',transition:'all 0.15s'}}>
+                  style={{display:'flex',alignItems:'center',gap:'0.3rem',padding:'0.4rem 0.7rem',borderRadius:'9999px',border:'none',cursor:'pointer',fontWeight:'700',fontSize:'0.72rem',whiteSpace:'nowrap',background:tab===t.id?B.accent:'transparent',color:tab===t.id?'white':B.muted,transition:'all 0.15s'}}>
                   <Ic n={t.ic} size={12}/>{t.label}
                 </button>
               ))}
             </nav>
-            <button onClick={onLogout} style={{padding:'0.5rem',borderRadius:'50%',border:'none',background:'none',cursor:'pointer',color:'#78716c',display:'flex'}}>
+            <button onClick={onLogout} style={{padding:'0.5rem',borderRadius:'50%',border:'none',background:'none',cursor:'pointer',color:B.muted,display:'flex'}}>
               <Ic n="logout" size={17}/>
             </button>
           </div>
         </div>
-
-        {/* Free plan warning */}
         {agency.plan==='free'&&(
-          <div style={{background:'#fffbeb',borderTop:'1px solid #fde68a',padding:'0.4rem 1rem',textAlign:'center',fontSize:'0.75rem',color:'#92400e',fontWeight:'600'}}>
-            ⚡ الخطة المجانية: {data.editors.length}/{FREE_LIMITS.editors} إيديتور · {data.videos.length}/{FREE_LIMITS.videos} فيديو · تواصل معنا للترقية
+          <div style={{background:'rgba(176,74,47,0.1)',borderTop:`1px solid rgba(176,74,47,0.2)`,padding:'0.4rem 1rem',textAlign:'center',fontSize:'0.72rem',color:B.accent,fontWeight:'600'}}>
+            ⚡ مجاني: {data.editors.length}/{FREE_LIMITS.editors} إيديتور · {data.videos.length}/{FREE_LIMITS.videos} فيديو · تواصل معنا للترقية
           </div>
         )}
-
-        {/* Expiry warning */}
         {dl!==null&&dl<=7&&dl>0&&(
-          <div style={{background:'#fef2f2',borderTop:'1px solid #fecaca',padding:'0.4rem 1rem',textAlign:'center',fontSize:'0.75rem',color:'#dc2626',fontWeight:'600'}}>
-            ⚠️ اشتراكك ينتهي خلال {dl} أيام! تواصل معنا للتجديد
+          <div style={{background:'rgba(239,68,68,0.1)',borderTop:'1px solid rgba(239,68,68,0.2)',padding:'0.4rem 1rem',textAlign:'center',fontSize:'0.72rem',color:B.danger,fontWeight:'600'}}>
+            ⚠️ الاشتراك ينتهي خلال {dl} أيام — تواصل معنا للتجديد
           </div>
         )}
       </header>
@@ -754,10 +741,207 @@ function AgencyApp({agency,onLogout}){
       </main>
 
       {toast&&(
-        <div style={{position:'fixed',bottom:'1.5rem',left:'50%',transform:'translateX(-50%)',padding:'0.75rem 1.25rem',borderRadius:'9999px',color:'white',fontWeight:'600',fontSize:'0.875rem',boxShadow:'0 10px 15px rgba(0,0,0,0.1)',zIndex:50,background:toast.type==='error'?'#dc2626':B.ink,whiteSpace:'nowrap',maxWidth:'90vw',textAlign:'center'}}>
+        <div style={{position:'fixed',bottom:'1.5rem',left:'50%',transform:'translateX(-50%)',padding:'0.75rem 1.25rem',borderRadius:'9999px',color:'white',fontWeight:'600',fontSize:'0.875rem',boxShadow:'0 10px 15px rgba(0,0,0,0.5)',zIndex:50,background:toast.type==='error'?B.danger:B.accent,whiteSpace:'nowrap',maxWidth:'90vw',textAlign:'center'}}>
           {toast.msg}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── EDITOR APP ───────────────────────────────────────────
+function EditorApp({agency,editor,initialData,onLogout}){
+  const[data,setData]=useState(initialData);
+  const[saving,setSaving]=useState(false);
+  const[tab,setTab]=useState('dashboard');
+  const[toast,setToast]=useState(null);
+  const showToast=(msg,type='success')=>{setToast({msg,type});setTimeout(()=>setToast(null),2500);};
+
+  const myVideos=data.videos.filter(v=>v.editorId===editor.id);
+
+  const persist=async next=>{
+    setData(next);setSaving(true);
+    try{await DB.saveData(agency.id,next);}
+    catch(e){showToast('فشل الحفظ','error');}
+    finally{setSaving(false);}
+  };
+
+  const addVideo=v=>{
+    persist({...data,videos:[{id:uid(),...v,editorId:editor.id,paid:false,createdAt:new Date().toISOString()},...data.videos]});
+    showToast('تم تسجيل الفيديو ✅');
+  };
+  const updVideo=(id,patch)=>{
+    const v=data.videos.find(x=>x.id===id);
+    if(!v||v.editorId!==editor.id||v.paid)return showToast('ما تقدرش تعدل هذا الفيديو','error');
+    delete patch.paid;
+    persist({...data,videos:data.videos.map(x=>x.id===id?{...x,...patch}:x)});
+  };
+  const delVideo=id=>{
+    const v=data.videos.find(x=>x.id===id);
+    if(!v||v.editorId!==editor.id||v.paid)return showToast('ما تقدرش تحذف','error');
+    if(!confirm('متأكد؟'))return;
+    persist({...data,videos:data.videos.filter(x=>x.id!==id)});showToast('تم الحذف');
+  };
+
+  const total=myVideos.reduce((s,v)=>s+Number(v.price||0),0);
+  const paid=myVideos.filter(v=>v.paid).reduce((s,v)=>s+Number(v.price||0),0);
+  const owed=total-paid;
+  const ms=new Date();ms.setDate(1);ms.setHours(0,0,0,0);
+  const mv=myVideos.filter(v=>new Date(v.date)>=ms);
+
+  const tabs=[{id:'dashboard',label:'حسابي',ic:'dashboard'},{id:'videos',label:'فيديوهاتي',ic:'film'}];
+
+  return(
+    <div style={{minHeight:'100vh',background:B.bg,fontFamily:"'Cairo',sans-serif"}}>
+      <header style={{borderBottom:`1px solid ${B.border}`,background:'rgba(26,26,26,0.9)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:40}}>
+        <div style={{maxWidth:'80rem',margin:'0 auto',padding:'0.75rem 1rem',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'0.75rem'}}>
+          <div style={{display:'flex',alignItems:'center',gap:'0.75rem'}}>
+            <Logo size={38}/>
+            <div>
+              <div style={{fontWeight:'800',fontSize:'0.95rem',color:B.text,lineHeight:1}}>{editor.name}</div>
+              <div style={{fontSize:'0.65rem',color:B.muted,display:'flex',alignItems:'center',gap:'0.25rem',marginTop:'2px'}}>
+                <Ic n="video" size={10}/> إيديتور · {agency.name}
+                {saving&&<span style={{color:B.accent}}>· يحفظ...</span>}
+              </div>
+            </div>
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:'0.5rem'}}>
+            <nav style={{display:'flex',gap:'0.2rem',background:'#111',borderRadius:'9999px',padding:'0.25rem'}}>
+              {tabs.map(t=>(
+                <button key={t.id} onClick={()=>setTab(t.id)}
+                  style={{display:'flex',alignItems:'center',gap:'0.3rem',padding:'0.4rem 0.7rem',borderRadius:'9999px',border:'none',cursor:'pointer',fontWeight:'700',fontSize:'0.72rem',whiteSpace:'nowrap',background:tab===t.id?B.accent:'transparent',color:tab===t.id?'white':B.muted,transition:'all 0.15s'}}>
+                  <Ic n={t.ic} size={12}/>{t.label}
+                </button>
+              ))}
+            </nav>
+            <button onClick={onLogout} style={{padding:'0.5rem',borderRadius:'50%',border:'none',background:'none',cursor:'pointer',color:B.muted,display:'flex'}}>
+              <Ic n="logout" size={17}/>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main style={{maxWidth:'80rem',margin:'0 auto',padding:'1.5rem 1rem'}}>
+        {tab==='dashboard'&&(
+          <div style={{display:'flex',flexDirection:'column',gap:'1.5rem'}}>
+            <div>
+              <h2 style={{fontSize:'1.75rem',fontWeight:'900',color:B.text}}>سلام {editor.name} 👋</h2>
+              <p style={{fontSize:'0.875rem',color:B.muted}}>هذي حسابك ومجموع خدمتك</p>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:'0.75rem'}}>
+              {[{l:'مجموع خدمتي',v:fmt(total)+' دج',ic:'trending'},{l:'عدد الفيديوهات',v:myVideos.length,ic:'film'},{l:'المدفوع',v:fmt(paid)+' دج',ic:'checkCircle'},{l:'الباقي ليا',v:fmt(owed)+' دج',ic:'alertCircle'}].map(s=>(
+                <div key={s.l} style={{background:B.card,border:`1px solid ${B.border}`,borderRadius:'1rem',padding:'1rem'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:'0.5rem'}}>
+                    <span style={{fontSize:'0.7rem',color:B.muted,fontWeight:'600'}}>{s.l}</span>
+                    <Ic n={s.ic} size={15} color={B.muted}/>
+                  </div>
+                  <div style={{fontSize:'1.4rem',fontWeight:'900',color:B.text,fontVariantNumeric:'tabular-nums'}}>{s.v}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{borderRadius:'1rem',padding:'1.25rem',background:`linear-gradient(135deg,${B.accent} 0%,#7a2a18 100%)`,color:'white'}}>
+              <div style={{fontSize:'0.8rem',opacity:0.7,marginBottom:'0.25rem'}}>هذا الشهر</div>
+              <div style={{fontSize:'2rem',fontWeight:'900',fontVariantNumeric:'tabular-nums'}}>{fmt(mv.reduce((s,v)=>s+Number(v.price||0),0))} <span style={{fontSize:'0.9rem',opacity:0.6}}>دج</span></div>
+              <div style={{fontSize:'0.8rem',opacity:0.7,marginTop:'0.25rem'}}>{mv.length} فيديو</div>
+            </div>
+            <div style={{background:B.card,borderRadius:'1rem',border:`1px solid ${B.border}`,overflow:'hidden'}}>
+              <div style={{padding:'1rem 1.25rem',borderBottom:`1px solid ${B.border}`,fontWeight:'800',fontSize:'1rem',color:B.text}}>آخر فيديوهاتي</div>
+              {myVideos.length===0
+                ?<div style={{padding:'2.5rem',textAlign:'center',color:B.muted,fontSize:'0.875rem'}}>ما سجلت حتى فيديو بعد</div>
+                :myVideos.slice(0,6).map(v=>{
+                  const cMap=Object.fromEntries(data.clients.map(c=>[c.id,c.name]));
+                  return(
+                    <div key={v.id} style={{padding:'0.75rem 1.25rem',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'0.75rem',borderBottom:`1px solid ${B.border}`}}>
+                      <div style={{minWidth:0}}>
+                        <div style={{fontWeight:'600',color:B.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v.title||'بدون عنوان'}</div>
+                        <div style={{fontSize:'0.7rem',color:B.muted}}>{cMap[v.clientId]||'—'} · {fmtD(v.date)}</div>
+                      </div>
+                      <div style={{display:'flex',alignItems:'center',gap:'0.5rem',flexShrink:0}}>
+                        <span style={{fontSize:'0.65rem',fontWeight:'700',padding:'0.15rem 0.5rem',borderRadius:'9999px',background:v.paid?'rgba(34,197,94,0.15)':B.accentSoft,color:v.paid?B.success:B.accent}}>{v.paid?'✓ خلص':'✗ ما خلصش'}</span>
+                        <span style={{fontWeight:'700',fontSize:'0.875rem',color:B.text,fontVariantNumeric:'tabular-nums'}}>{fmt(v.price)}<span style={{fontSize:'0.65rem',color:B.muted}}> دج</span></span>
+                      </div>
+                    </div>
+                  );
+                })
+              }
+            </div>
+          </div>
+        )}
+        {tab==='videos'&&<EditorVideosTab data={data} editor={editor} myVideos={myVideos} addVideo={addVideo} updVideo={updVideo} delVideo={delVideo}/>}
+      </main>
+
+      {toast&&(
+        <div style={{position:'fixed',bottom:'1.5rem',left:'50%',transform:'translateX(-50%)',padding:'0.75rem 1.25rem',borderRadius:'9999px',color:'white',fontWeight:'600',fontSize:'0.875rem',boxShadow:'0 10px 15px rgba(0,0,0,0.5)',zIndex:50,background:toast.type==='error'?B.danger:B.accent,whiteSpace:'nowrap',maxWidth:'90vw',textAlign:'center'}}>
+          {toast.msg}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── EDITOR VIDEOS TAB ────────────────────────────────────
+function EditorVideosTab({data,editor,myVideos,addVideo,updVideo,delVideo}){
+  const[showForm,setShowForm]=useState(false);const[editing,setEditing]=useState(null);
+  const[search,setSearch]=useState('');const[fS,setFS]=useState('');
+  const cMap=Object.fromEntries(data.clients.map(c=>[c.id,c.name]));
+  const filt=useMemo(()=>myVideos.filter(v=>{
+    if(fS==='paid'&&!v.paid)return false;if(fS==='unpaid'&&v.paid)return false;
+    if(search&&!(v.title||'').toLowerCase().includes(search.toLowerCase())&&!(cMap[v.clientId]||'').toLowerCase().includes(search.toLowerCase()))return false;
+    return true;
+  }),[myVideos,fS,search,cMap]);
+  const tot=filt.reduce((s,v)=>s+Number(v.price||0),0);
+  const owed=filt.filter(v=>!v.paid).reduce((s,v)=>s+Number(v.price||0),0);
+  const SI={width:'100%',padding:'0.5rem 0.75rem',background:'#111',border:`1px solid ${B.border}`,borderRadius:'0.75rem',outline:'none',fontSize:'0.8rem',color:B.text};
+  if(data.clients.length===0)return<div style={{background:'rgba(251,191,36,0.1)',border:'1px solid rgba(251,191,36,0.2)',borderRadius:'1rem',padding:'1.5rem',textAlign:'center',fontSize:'0.875rem',color:'#fbbf24'}}>المسير لازم يزيد الزبائن أول</div>;
+  return(
+    <div style={{display:'flex',flexDirection:'column',gap:'1.25rem'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'0.75rem'}}>
+        <div>
+          <h2 style={{fontSize:'1.75rem',fontWeight:'900',color:B.text}}>فيديوهاتي</h2>
+          <p style={{fontSize:'0.75rem',color:B.muted,fontVariantNumeric:'tabular-nums'}}>{filt.length} فيديو · {fmt(tot)} دج · باقي {fmt(owed)} دج</p>
+        </div>
+        <button onClick={()=>{setEditing(null);setShowForm(true);}} style={{display:'flex',alignItems:'center',gap:'0.4rem',padding:'0.625rem 1rem',borderRadius:'9999px',background:B.accent,color:'white',fontWeight:'700',border:'none',cursor:'pointer',fontSize:'0.8rem',whiteSpace:'nowrap'}}>
+          <Ic n="plus" size={16} color="white"/>سجل فيديو
+        </button>
+      </div>
+      <div style={{background:B.card,borderRadius:'1rem',border:`1px solid ${B.border}`,padding:'0.75rem',display:'flex',flexDirection:'column',gap:'0.5rem'}}>
+        <div style={{position:'relative'}}>
+          <span style={{position:'absolute',right:'0.75rem',top:'50%',transform:'translateY(-50%)',display:'flex',pointerEvents:'none'}}><Ic n="search" size={14} color={B.muted}/></span>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="بحث..." style={{...SI,paddingRight:'2rem'}}/>
+        </div>
+        <select value={fS} onChange={e=>setFS(e.target.value)} style={SI}>
+          <option value="">الكل</option><option value="paid">المدفوع</option><option value="unpaid">الباقي</option>
+        </select>
+      </div>
+      <div style={{background:B.card,borderRadius:'1rem',border:`1px solid ${B.border}`,overflow:'hidden'}}>
+        {filt.length===0?<div style={{padding:'2.5rem',textAlign:'center',color:B.muted,fontSize:'0.875rem'}}>ما كاين حتى فيديو</div>
+        :filt.map(v=>(
+          <div key={v.id} style={{padding:'0.875rem 1.25rem',borderBottom:`1px solid ${B.border}`}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'0.5rem'}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:'flex',alignItems:'center',gap:'0.5rem',flexWrap:'wrap',marginBottom:'0.2rem'}}>
+                  <span style={{fontWeight:'700',color:B.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v.title||'بدون عنوان'}</span>
+                  <span style={{fontSize:'0.65rem',fontWeight:'700',padding:'0.15rem 0.5rem',borderRadius:'9999px',background:v.paid?'rgba(34,197,94,0.15)':B.accentSoft,color:v.paid?B.success:B.accent}}>
+                    {v.paid?'✓ خلص':'✗ ما خلصش'}
+                  </span>
+                </div>
+                <div style={{fontSize:'0.7rem',color:B.muted,display:'flex',gap:'0.5rem',flexWrap:'wrap'}}>
+                  <span>{cMap[v.clientId]||'—'}</span>
+                  <span style={{fontVariantNumeric:'tabular-nums'}}>{fmtD(v.date)}</span>
+                </div>
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:'0.25rem',flexShrink:0}}>
+                <span style={{fontWeight:'900',fontSize:'1rem',color:B.text,fontVariantNumeric:'tabular-nums'}}>{fmt(v.price)}<span style={{fontSize:'0.65rem',color:B.muted}}> دج</span></span>
+                {!v.paid&&<>
+                  <button onClick={()=>{setEditing(v);setShowForm(true);}} style={{padding:'0.4rem',border:'none',background:'none',cursor:'pointer',color:B.muted,display:'flex'}}><Ic n="pencil" size={14}/></button>
+                  <button onClick={()=>delVideo(v.id)} style={{padding:'0.4rem',border:'none',background:'none',cursor:'pointer',color:B.danger,display:'flex'}}><Ic n="trash" size={14} color={B.danger}/></button>
+                </>}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      {showForm&&<VideoForm editors={[editor]} clients={data.clients} initial={editing} lockedEditor={true} onClose={()=>{setShowForm(false);setEditing(null);}} onSave={f=>{if(editing)updVideo(editing.id,f);else addVideo(f);setShowForm(false);setEditing(null);}}/>}
     </div>
   );
 }
@@ -780,65 +964,72 @@ function AgencyDash({data,setTab,agency}){
   },[data]);
   const eMap=Object.fromEntries(data.editors.map(e=>[e.id,e.name]));
   const cMap=Object.fromEntries(data.clients.map(c=>[c.id,c.name]));
+
   if(!data.editors.length&&!data.clients.length&&!data.videos.length)return(
     <div style={{textAlign:'center',padding:'3rem 1rem'}}>
       <Logo size={80}/>
-      <h2 style={{fontSize:'1.75rem',fontWeight:'900',margin:'1rem 0 0.5rem'}}>مرحبا بيك في {agency.name} 👋</h2>
-      <p style={{color:'#78716c',marginBottom:'2rem'}}>ابدا بإضافة الإيديتورز والزبائن</p>
+      <h2 style={{fontSize:'1.75rem',fontWeight:'900',color:B.text,margin:'1rem 0 0.5rem'}}>مرحبا بيك في {agency.name} 🚀</h2>
+      <p style={{color:B.muted,marginBottom:'2rem'}}>ابدا بإضافة الإيديتورز والزبائن</p>
       <div style={{display:'flex',gap:'0.75rem',justifyContent:'center',flexWrap:'wrap'}}>
-        <button onClick={()=>setTab('editors')} style={{display:'flex',alignItems:'center',gap:'0.5rem',padding:'0.75rem 1.25rem',borderRadius:'9999px',background:B.ink,color:'white',fontWeight:'700',border:'none',cursor:'pointer'}}>
+        <button onClick={()=>setTab('editors')} style={{display:'flex',alignItems:'center',gap:'0.5rem',padding:'0.75rem 1.25rem',borderRadius:'9999px',background:B.accent,color:'white',fontWeight:'700',border:'none',cursor:'pointer'}}>
           <Ic n="users" size={17} color="white"/>زيد إيديتور
         </button>
-        <button onClick={()=>setTab('clients')} style={{display:'flex',alignItems:'center',gap:'0.5rem',padding:'0.75rem 1.25rem',borderRadius:'9999px',background:'white',color:'#1c1917',fontWeight:'700',border:'1px solid #d6d3d1',cursor:'pointer'}}>
+        <button onClick={()=>setTab('clients')} style={{display:'flex',alignItems:'center',gap:'0.5rem',padding:'0.75rem 1.25rem',borderRadius:'9999px',background:'transparent',color:B.text,fontWeight:'700',border:`1px solid ${B.border}`,cursor:'pointer'}}>
           <Ic n="briefcase" size={17}/>زيد زبون
         </button>
       </div>
     </div>
   );
+
   return(
     <div style={{display:'flex',flexDirection:'column',gap:'1.5rem'}}>
       <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:'0.75rem'}}>
-        <StatCard label="المجموع الكلي" value={stats.tot} ic="trending"/>
-        <StatCard label="المدفوع" value={stats.pd} ic="checkCircle" grn/>
-        <StatCard label="الباقي خلاص" value={stats.owed} ic="alertCircle" hl/>
-        <StatCard label={`الشهر (${stats.mCnt})`} value={stats.mTot} ic="clock"/>
+        {[{l:'المجموع الكلي',v:fmt(stats.tot)+' دج',ic:'trending'},{l:'المدفوع',v:fmt(stats.pd)+' دج',ic:'checkCircle'},{l:'الباقي خلاص',v:fmt(stats.owed)+' دج',ic:'alertCircle'},{l:`الشهر (${stats.mCnt})`,v:fmt(stats.mTot)+' دج',ic:'clock'}].map(s=>(
+          <div key={s.l} style={{background:B.card,border:`1px solid ${B.border}`,borderRadius:'1rem',padding:'1rem'}}>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:'0.5rem'}}>
+              <span style={{fontSize:'0.7rem',color:B.muted,fontWeight:'600'}}>{s.l}</span>
+              <Ic n={s.ic} size={15} color={B.muted}/>
+            </div>
+            <div style={{fontSize:'1.3rem',fontWeight:'900',color:B.text,fontVariantNumeric:'tabular-nums'}}>{s.v}</div>
+          </div>
+        ))}
       </div>
-      <div style={{background:'white',borderRadius:'1rem',border:'1px solid #e7e5e4',overflow:'hidden'}}>
-        <div style={{padding:'1rem 1.25rem',borderBottom:'1px solid #f5f5f4',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-          <div style={{fontWeight:'800',fontSize:'1rem',color:'#1c1917'}}>حسابات الإيديتورز</div>
-          <Ic n="wallet" size={18} color="#a8a29e"/>
+      <div style={{background:B.card,borderRadius:'1rem',border:`1px solid ${B.border}`,overflow:'hidden'}}>
+        <div style={{padding:'1rem 1.25rem',borderBottom:`1px solid ${B.border}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div style={{fontWeight:'800',fontSize:'1rem',color:B.text}}>حسابات الإيديتورز</div>
+          <Ic n="wallet" size={18} color={B.muted}/>
         </div>
-        {stats.edRows.length===0?<div style={{padding:'2rem',textAlign:'center',color:'#a8a29e',fontSize:'0.875rem'}}>ما كاينش إيديتورز</div>
+        {stats.edRows.length===0?<div style={{padding:'2rem',textAlign:'center',color:B.muted,fontSize:'0.875rem'}}>ما كاينش إيديتورز</div>
         :stats.edRows.map(e=>(
-          <div key={e.id} style={{padding:'0.875rem 1.25rem',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'0.75rem',borderBottom:'1px solid #f5f5f4'}}>
+          <div key={e.id} style={{padding:'0.875rem 1.25rem',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'0.75rem',borderBottom:`1px solid ${B.border}`}}>
             <div style={{display:'flex',alignItems:'center',gap:'0.75rem',minWidth:0}}>
-              <div style={{width:'2.25rem',height:'2.25rem',borderRadius:'50%',display:'grid',placeItems:'center',fontWeight:'700',flexShrink:0,background:B.soft,color:B.accent}}>{e.name.charAt(0)}</div>
+              <div style={{width:'2.25rem',height:'2.25rem',borderRadius:'50%',display:'grid',placeItems:'center',fontWeight:'700',flexShrink:0,background:B.accentSoft,color:B.accent}}>{e.name.charAt(0)}</div>
               <div style={{minWidth:0}}>
-                <div style={{fontWeight:'700',color:'#1c1917',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.name}</div>
-                <div style={{fontSize:'0.7rem',color:'#78716c'}}>{e.count} فيديو · {fmt(e.total)} دج</div>
+                <div style={{fontWeight:'700',color:B.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.name}</div>
+                <div style={{fontSize:'0.7rem',color:B.muted}}>{e.count} فيديو · {fmt(e.total)} دج</div>
               </div>
             </div>
             <div style={{textAlign:'left',flexShrink:0}}>
-              <div style={{fontSize:'0.65rem',color:'#78716c'}}>باقي</div>
-              <div style={{fontWeight:'900',color:e.owed>0?B.accent:'#a8a29e',fontVariantNumeric:'tabular-nums'}}>{fmt(e.owed)}<span style={{fontSize:'0.65rem'}}> دج</span></div>
+              <div style={{fontSize:'0.65rem',color:B.muted}}>باقي</div>
+              <div style={{fontWeight:'900',color:e.owed>0?B.accent:B.muted,fontVariantNumeric:'tabular-nums'}}>{fmt(e.owed)}<span style={{fontSize:'0.65rem'}}> دج</span></div>
             </div>
           </div>
         ))}
       </div>
-      <div style={{background:'white',borderRadius:'1rem',border:'1px solid #e7e5e4',overflow:'hidden'}}>
-        <div style={{padding:'1rem 1.25rem',borderBottom:'1px solid #f5f5f4',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-          <div style={{fontWeight:'800',fontSize:'1rem',color:'#1c1917'}}>آخر الفيديوهات</div>
+      <div style={{background:B.card,borderRadius:'1rem',border:`1px solid ${B.border}`,overflow:'hidden'}}>
+        <div style={{padding:'1rem 1.25rem',borderBottom:`1px solid ${B.border}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div style={{fontWeight:'800',fontSize:'1rem',color:B.text}}>آخر الفيديوهات</div>
           <button onClick={()=>setTab('videos')} style={{fontSize:'0.75rem',fontWeight:'700',color:B.accent,background:'none',border:'none',cursor:'pointer'}}>شوف الكل ←</button>
         </div>
         {data.videos.slice(0,5).map(v=>(
-          <div key={v.id} style={{padding:'0.75rem 1.25rem',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'0.75rem',borderBottom:'1px solid #f5f5f4'}}>
+          <div key={v.id} style={{padding:'0.75rem 1.25rem',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'0.75rem',borderBottom:`1px solid ${B.border}`}}>
             <div style={{minWidth:0}}>
-              <div style={{fontWeight:'600',color:'#1c1917',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v.title||'بدون عنوان'}</div>
-              <div style={{fontSize:'0.7rem',color:'#78716c'}}>{eMap[v.editorId]||'—'} · {cMap[v.clientId]||'—'}</div>
+              <div style={{fontWeight:'600',color:B.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v.title||'بدون عنوان'}</div>
+              <div style={{fontSize:'0.7rem',color:B.muted}}>{eMap[v.editorId]||'—'} · {cMap[v.clientId]||'—'}</div>
             </div>
             <div style={{display:'flex',alignItems:'center',gap:'0.5rem',flexShrink:0}}>
-              <span style={{fontSize:'0.65rem',fontWeight:'700',padding:'0.15rem 0.5rem',borderRadius:'9999px',background:v.paid?'#d1fae5':B.soft,color:v.paid?'#047857':B.accent}}>{v.paid?'✓ خلص':'✗ ما خلصش'}</span>
-              <span style={{fontWeight:'700',fontSize:'0.875rem',fontVariantNumeric:'tabular-nums'}}>{fmt(v.price)}<span style={{fontSize:'0.65rem',color:'#a8a29e'}}> دج</span></span>
+              <span style={{fontSize:'0.65rem',fontWeight:'700',padding:'0.15rem 0.5rem',borderRadius:'9999px',background:v.paid?'rgba(34,197,94,0.15)':B.accentSoft,color:v.paid?B.success:B.accent}}>{v.paid?'✓ خلص':'✗ ما خلصش'}</span>
+              <span style={{fontWeight:'700',fontSize:'0.875rem',color:B.text,fontVariantNumeric:'tabular-nums'}}>{fmt(v.price)}<span style={{fontSize:'0.65rem',color:B.muted}}> دج</span></span>
             </div>
           </div>
         ))}
@@ -847,7 +1038,7 @@ function AgencyDash({data,setTab,agency}){
   );
 }
 
-// ─── VIDEOS TAB ───────────────────────────────────────────
+// ─── VIDEOS TAB (AGENCY) ──────────────────────────────────
 function VideosTab({data,addVideo,updVideo,delVideo,togglePaid}){
   const[showForm,setShowForm]=useState(false);const[editing,setEditing]=useState(null);
   const[search,setSearch]=useState('');const[fE,setFE]=useState('');const[fC,setFC]=useState('');const[fS,setFS]=useState('');
@@ -861,22 +1052,22 @@ function VideosTab({data,addVideo,updVideo,delVideo,togglePaid}){
   }),[data.videos,fE,fC,fS,search,eMap,cMap]);
   const tot=filt.reduce((s,v)=>s+Number(v.price||0),0);
   const owed=filt.filter(v=>!v.paid).reduce((s,v)=>s+Number(v.price||0),0);
-  const SI={width:'100%',padding:'0.5rem 0.75rem',background:'#fafaf9',border:'1px solid #e7e5e4',borderRadius:'0.75rem',outline:'none',fontSize:'0.8rem'};
-  if(data.clients.length===0)return<div style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:'1rem',padding:'1.5rem',textAlign:'center',fontSize:'0.875rem',color:'#92400e'}}>زيد إيديتور وزبون أول</div>;
+  const SI={width:'100%',padding:'0.5rem 0.75rem',background:'#111',border:`1px solid ${B.border}`,borderRadius:'0.75rem',outline:'none',fontSize:'0.8rem',color:B.text};
+  if(data.clients.length===0)return<div style={{background:'rgba(251,191,36,0.1)',border:'1px solid rgba(251,191,36,0.2)',borderRadius:'1rem',padding:'1.5rem',textAlign:'center',fontSize:'0.875rem',color:'#fbbf24'}}>زيد إيديتور وزبون أول</div>;
   return(
     <div style={{display:'flex',flexDirection:'column',gap:'1.25rem'}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'0.75rem'}}>
         <div>
-          <h2 style={{fontSize:'1.75rem',fontWeight:'900',color:'#1c1917'}}>الفيديوهات</h2>
-          <p style={{fontSize:'0.75rem',color:'#78716c',fontVariantNumeric:'tabular-nums'}}>{filt.length} فيديو · {fmt(tot)} دج · باقي {fmt(owed)} دج</p>
+          <h2 style={{fontSize:'1.75rem',fontWeight:'900',color:B.text}}>الفيديوهات</h2>
+          <p style={{fontSize:'0.75rem',color:B.muted,fontVariantNumeric:'tabular-nums'}}>{filt.length} فيديو · {fmt(tot)} دج · باقي {fmt(owed)} دج</p>
         </div>
-        <button onClick={()=>{setEditing(null);setShowForm(true);}} style={{display:'flex',alignItems:'center',gap:'0.4rem',padding:'0.625rem 1rem',borderRadius:'9999px',background:B.ink,color:'white',fontWeight:'700',border:'none',cursor:'pointer',fontSize:'0.8rem',whiteSpace:'nowrap'}}>
+        <button onClick={()=>{setEditing(null);setShowForm(true);}} style={{display:'flex',alignItems:'center',gap:'0.4rem',padding:'0.625rem 1rem',borderRadius:'9999px',background:B.accent,color:'white',fontWeight:'700',border:'none',cursor:'pointer',fontSize:'0.8rem',whiteSpace:'nowrap'}}>
           <Ic n="plus" size={16} color="white"/>سجل فيديو
         </button>
       </div>
-      <div style={{background:'white',borderRadius:'1rem',border:'1px solid #e7e5e4',padding:'0.75rem',display:'flex',flexDirection:'column',gap:'0.5rem'}}>
+      <div style={{background:B.card,borderRadius:'1rem',border:`1px solid ${B.border}`,padding:'0.75rem',display:'flex',flexDirection:'column',gap:'0.5rem'}}>
         <div style={{position:'relative'}}>
-          <span style={{position:'absolute',right:'0.75rem',top:'50%',transform:'translateY(-50%)',display:'flex',pointerEvents:'none'}}><Ic n="search" size={14} color="#a8a29e"/></span>
+          <span style={{position:'absolute',right:'0.75rem',top:'50%',transform:'translateY(-50%)',display:'flex',pointerEvents:'none'}}><Ic n="search" size={14} color={B.muted}/></span>
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="بحث..." style={{...SI,paddingRight:'2rem'}}/>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.5rem'}}>
@@ -885,38 +1076,38 @@ function VideosTab({data,addVideo,updVideo,delVideo,togglePaid}){
           <select value={fS} onChange={e=>setFS(e.target.value)} style={SI}><option value="">الكل</option><option value="paid">المدفوع</option><option value="unpaid">الباقي</option></select>
         </div>
       </div>
-      <div style={{background:'white',borderRadius:'1rem',border:'1px solid #e7e5e4',overflow:'hidden'}}>
-        {filt.length===0?<div style={{padding:'2.5rem',textAlign:'center',color:'#a8a29e',fontSize:'0.875rem'}}>ما كاين حتى فيديو</div>
+      <div style={{background:B.card,borderRadius:'1rem',border:`1px solid ${B.border}`,overflow:'hidden'}}>
+        {filt.length===0?<div style={{padding:'2.5rem',textAlign:'center',color:B.muted,fontSize:'0.875rem'}}>ما كاين حتى فيديو</div>
         :filt.map(v=>(
-          <div key={v.id} style={{padding:'0.875rem 1.25rem',borderBottom:'1px solid #f5f5f4'}}>
+          <div key={v.id} style={{padding:'0.875rem 1.25rem',borderBottom:`1px solid ${B.border}`}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'0.5rem'}}>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{display:'flex',alignItems:'center',gap:'0.5rem',flexWrap:'wrap',marginBottom:'0.2rem'}}>
-                  <span style={{fontWeight:'700',color:'#1c1917',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v.title||'بدون عنوان'}</span>
-                  <button onClick={()=>togglePaid(v.id)} style={{fontSize:'0.65rem',fontWeight:'700',padding:'0.15rem 0.5rem',borderRadius:'9999px',border:'none',cursor:'pointer',background:v.paid?'#d1fae5':B.soft,color:v.paid?'#047857':B.accent}}>
+                  <span style={{fontWeight:'700',color:B.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v.title||'بدون عنوان'}</span>
+                  <button onClick={()=>togglePaid(v.id)} style={{fontSize:'0.65rem',fontWeight:'700',padding:'0.15rem 0.5rem',borderRadius:'9999px',border:'none',cursor:'pointer',background:v.paid?'rgba(34,197,94,0.15)':B.accentSoft,color:v.paid?B.success:B.accent}}>
                     {v.paid?'✓ خلص':'✗ ما خلصش'}
                   </button>
                 </div>
-                <div style={{fontSize:'0.7rem',color:'#78716c',display:'flex',gap:'0.5rem',flexWrap:'wrap'}}>
+                <div style={{fontSize:'0.7rem',color:B.muted,display:'flex',gap:'0.5rem',flexWrap:'wrap'}}>
                   <span>{eMap[v.editorId]||'—'}</span><span>{cMap[v.clientId]||'—'}</span>
                   <span style={{fontVariantNumeric:'tabular-nums'}}>{fmtD(v.date)}</span>
                 </div>
               </div>
               <div style={{display:'flex',alignItems:'center',gap:'0.25rem',flexShrink:0}}>
-                <span style={{fontWeight:'900',fontSize:'1rem',fontVariantNumeric:'tabular-nums'}}>{fmt(v.price)}<span style={{fontSize:'0.65rem',color:'#a8a29e'}}> دج</span></span>
-                <button onClick={()=>{setEditing(v);setShowForm(true);}} style={{padding:'0.4rem',border:'none',background:'none',cursor:'pointer',color:'#78716c',display:'flex'}}><Ic n="pencil" size={14}/></button>
-                <button onClick={()=>delVideo(v.id)} style={{padding:'0.4rem',border:'none',background:'none',cursor:'pointer',color:'#78716c',display:'flex'}}><Ic n="trash" size={14}/></button>
+                <span style={{fontWeight:'900',fontSize:'1rem',color:B.text,fontVariantNumeric:'tabular-nums'}}>{fmt(v.price)}<span style={{fontSize:'0.65rem',color:B.muted}}> دج</span></span>
+                <button onClick={()=>{setEditing(v);setShowForm(true);}} style={{padding:'0.4rem',border:'none',background:'none',cursor:'pointer',color:B.muted,display:'flex'}}><Ic n="pencil" size={14}/></button>
+                <button onClick={()=>delVideo(v.id)} style={{padding:'0.4rem',border:'none',background:'none',cursor:'pointer',color:B.danger,display:'flex'}}><Ic n="trash" size={14} color={B.danger}/></button>
               </div>
             </div>
           </div>
         ))}
       </div>
-      {showForm&&<VideoForm editors={data.editors} clients={data.clients} initial={editing} onClose={()=>{setShowForm(false);setEditing(null);}} onSave={f=>{if(editing)updVideo(editing.id,f);else addVideo(f);setShowForm(false);setEditing(null);}}/>}
+      {showForm&&<VideoForm editors={data.editors} clients={data.clients} initial={editing} lockedEditor={false} onClose={()=>{setShowForm(false);setEditing(null);}} onSave={f=>{if(editing)updVideo(editing.id,f);else addVideo(f);setShowForm(false);setEditing(null);}}/>}
     </div>
   );
 }
 
-function VideoForm({editors,clients,initial,onClose,onSave}){
+function VideoForm({editors,clients,initial,lockedEditor,onClose,onSave}){
   const[f,setF]=useState(initial||{title:'',editorId:editors[0]?.id||'',clientId:clients[0]?.id||'',date:today(),price:'',paid:false});
   const submit=()=>{
     if(!f.editorId||!f.clientId)return alert('اختار إيديتور وزبون');
@@ -927,25 +1118,31 @@ function VideoForm({editors,clients,initial,onClose,onSave}){
     <Modal onClose={onClose} title={initial?'تعديل فيديو':'فيديو جديد'}>
       <div style={{display:'flex',flexDirection:'column',gap:'1rem'}}>
         <Field label="عنوان الفيديو"><input value={f.title} onChange={e=>setF({...f,title:e.target.value})} placeholder="إعلان منتج جديد" style={INP}/></Field>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.75rem'}}>
-          <Field label="الإيديتور"><select value={f.editorId} onChange={e=>setF({...f,editorId:e.target.value})} style={INP}>{editors.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select></Field>
+        {!lockedEditor?(
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.75rem'}}>
+            <Field label="الإيديتور"><select value={f.editorId} onChange={e=>setF({...f,editorId:e.target.value})} style={INP}>{editors.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select></Field>
+            <Field label="الزبون"><select value={f.clientId} onChange={e=>setF({...f,clientId:e.target.value})} style={INP}>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
+          </div>
+        ):(
           <Field label="الزبون"><select value={f.clientId} onChange={e=>setF({...f,clientId:e.target.value})} style={INP}>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
-        </div>
+        )}
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.75rem'}}>
           <Field label="التاريخ"><input type="date" value={f.date} onChange={e=>setF({...f,date:e.target.value})} style={INP}/></Field>
           <Field label="السعر (دج)"><input type="number" inputMode="numeric" value={f.price} onChange={e=>setF({...f,price:e.target.value})} placeholder="0" style={{...INP,fontWeight:'700'}}/></Field>
         </div>
-        {initial&&<label style={{display:'flex',alignItems:'center',gap:'0.5rem',cursor:'pointer',padding:'0.75rem',background:'#fafaf9',borderRadius:'0.75rem'}}>
-          <input type="checkbox" checked={!!f.paid} onChange={e=>setF({...f,paid:e.target.checked})} style={{width:'1.25rem',height:'1.25rem',accentColor:'#059669'}}/>
-          <span style={{fontSize:'0.875rem',fontWeight:'600'}}>خلصت الإيديتور</span>
-        </label>}
-        <button onClick={submit} style={{width:'100%',padding:'0.875rem',borderRadius:'0.75rem',background:B.ink,color:'white',fontWeight:'700',border:'none',cursor:'pointer'}}>{initial?'حفظ':'سجل'}</button>
+        {initial&&!lockedEditor&&(
+          <label style={{display:'flex',alignItems:'center',gap:'0.5rem',cursor:'pointer',padding:'0.75rem',background:'#111',borderRadius:'0.75rem',border:`1px solid ${B.border}`}}>
+            <input type="checkbox" checked={!!f.paid} onChange={e=>setF({...f,paid:e.target.checked})} style={{width:'1.25rem',height:'1.25rem',accentColor:B.success}}/>
+            <span style={{fontSize:'0.875rem',fontWeight:'600',color:B.text}}>خلصت الإيديتور</span>
+          </label>
+        )}
+        <button onClick={submit} style={{width:'100%',padding:'0.875rem',borderRadius:'0.75rem',background:B.accent,color:'white',fontWeight:'700',border:'none',cursor:'pointer'}}>{initial?'حفظ':'سجل'}</button>
       </div>
     </Modal>
   );
 }
 
-function EditorForm({initial,onClose,onSave}){
+function EditorFormComp({initial,onClose,onSave}){
   const[name,setName]=useState(initial?.name||'');const[pw,setPw]=useState('');
   const[show,setShow]=useState(false);const[err,setErr]=useState('');
   const submit=()=>{
@@ -961,8 +1158,8 @@ function EditorForm({initial,onClose,onSave}){
         <Field label={initial?'كلمة سر جديدة (اختياري)':'كلمة السر'}>
           <PwField value={pw} onChange={setPw} show={show} setShow={setShow} placeholder={initial?'خليها فارغة باش ما تتبدلش':'كلمة السر'} onEnter={submit}/>
         </Field>
-        {err&&<div style={{fontSize:'0.75rem',color:'#dc2626',fontWeight:'700'}}>{err}</div>}
-        <button onClick={submit} style={{width:'100%',padding:'0.875rem',borderRadius:'0.75rem',background:B.ink,color:'white',fontWeight:'700',border:'none',cursor:'pointer'}}>{initial?'حفظ':'زيد'}</button>
+        {err&&<div style={{fontSize:'0.75rem',color:B.danger,fontWeight:'700'}}>{err}</div>}
+        <button onClick={submit} style={{width:'100%',padding:'0.875rem',borderRadius:'0.75rem',background:B.accent,color:'white',fontWeight:'700',border:'none',cursor:'pointer'}}>{initial?'حفظ':'زيد'}</button>
       </div>
     </Modal>
   );
@@ -975,33 +1172,38 @@ function EditorsTab({data,addEditor,updEditor,delEditor,canAdd,limit,plan}){
     <div style={{display:'flex',flexDirection:'column',gap:'1.25rem'}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
         <div>
-          <h2 style={{fontSize:'1.75rem',fontWeight:'900',color:'#1c1917'}}>الإيديتورز</h2>
-          {plan==='free'&&<div style={{fontSize:'0.75rem',color:'#78716c'}}>{data.editors.length}/{limit} في الخطة المجانية</div>}
+          <h2 style={{fontSize:'1.75rem',fontWeight:'900',color:B.text}}>الإيديتورز</h2>
+          {plan==='free'&&<div style={{fontSize:'0.75rem',color:B.muted}}>{data.editors.length}/{limit} في الخطة المجانية</div>}
         </div>
-        <button onClick={()=>{setEditing(null);setShowForm(true);}} style={{display:'flex',alignItems:'center',gap:'0.4rem',padding:'0.625rem 1rem',borderRadius:'9999px',background:canAdd?B.ink:'#a8a29e',color:'white',fontWeight:'700',border:'none',cursor:'pointer',fontSize:'0.8rem'}}>
+        <button onClick={()=>{setEditing(null);setShowForm(true);}} style={{display:'flex',alignItems:'center',gap:'0.4rem',padding:'0.625rem 1rem',borderRadius:'9999px',background:canAdd?B.accent:'#333',color:'white',fontWeight:'700',border:'none',cursor:'pointer',fontSize:'0.8rem'}}>
           <Ic n="plus" size={16} color="white"/>زيد إيديتور
         </button>
       </div>
-      <div style={{background:'white',borderRadius:'1rem',border:'1px solid #e7e5e4',overflow:'hidden'}}>
-        {data.editors.length===0?<div style={{padding:'2.5rem',textAlign:'center',color:'#a8a29e',fontSize:'0.875rem'}}>ما كاين حتى إيديتور</div>
+      {plan==='free'&&(
+        <div style={{padding:'0.75rem 1rem',background:'rgba(176,74,47,0.1)',border:'1px solid rgba(176,74,47,0.2)',borderRadius:'0.75rem',fontSize:'0.8rem',color:B.accent}}>
+          💡 كي تزيد إيديتور، حط لو كلمة سر — يستعملها يدخل بإيميل الوكالة + كلمة سرو
+        </div>
+      )}
+      <div style={{background:B.card,borderRadius:'1rem',border:`1px solid ${B.border}`,overflow:'hidden'}}>
+        {data.editors.length===0?<div style={{padding:'2.5rem',textAlign:'center',color:B.muted,fontSize:'0.875rem'}}>ما كاين حتى إيديتور</div>
         :data.editors.map(item=>{
           const s=stats[item.id]||{count:0,total:0,owed:0};
           return(
-            <div key={item.id} style={{padding:'0.875rem 1.25rem',display:'flex',alignItems:'center',gap:'0.75rem',borderBottom:'1px solid #f5f5f4'}}>
-              <div style={{width:'2.5rem',height:'2.5rem',borderRadius:'50%',display:'grid',placeItems:'center',fontWeight:'700',flexShrink:0,background:B.soft,color:B.accent}}>{item.name.charAt(0)}</div>
+            <div key={item.id} style={{padding:'0.875rem 1.25rem',display:'flex',alignItems:'center',gap:'0.75rem',borderBottom:`1px solid ${B.border}`}}>
+              <div style={{width:'2.5rem',height:'2.5rem',borderRadius:'50%',display:'grid',placeItems:'center',fontWeight:'700',flexShrink:0,background:B.accentSoft,color:B.accent}}>{item.name.charAt(0)}</div>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{fontWeight:'700',color:'#1c1917'}}>{item.name}</div>
-                <div style={{fontSize:'0.75rem',color:'#78716c'}}>{s.count} فيديو · {fmt(s.total)} دج{s.owed>0&&<span style={{color:B.accent,fontWeight:'700'}}> · باقي {fmt(s.owed)} دج</span>}</div>
+                <div style={{fontWeight:'700',color:B.text}}>{item.name}</div>
+                <div style={{fontSize:'0.75rem',color:B.muted}}>{s.count} فيديو · {fmt(s.total)} دج{s.owed>0&&<span style={{color:B.accent,fontWeight:'700'}}> · باقي {fmt(s.owed)} دج</span>}</div>
               </div>
               <div style={{display:'flex',gap:'0.15rem',flexShrink:0}}>
-                <button onClick={()=>{setEditing(item);setShowForm(true);}} style={{padding:'0.4rem',border:'none',background:'none',cursor:'pointer',color:'#78716c',display:'flex'}}><Ic n="pencil" size={14}/></button>
-                <button onClick={()=>delEditor(item.id)} style={{padding:'0.4rem',border:'none',background:'none',cursor:'pointer',color:'#78716c',display:'flex'}}><Ic n="trash" size={14}/></button>
+                <button onClick={()=>{setEditing(item);setShowForm(true);}} style={{padding:'0.4rem',border:'none',background:'none',cursor:'pointer',color:B.muted,display:'flex'}}><Ic n="pencil" size={14}/></button>
+                <button onClick={()=>delEditor(item.id)} style={{padding:'0.4rem',border:'none',background:'none',cursor:'pointer',color:B.danger,display:'flex'}}><Ic n="trash" size={14} color={B.danger}/></button>
               </div>
             </div>
           );
         })}
       </div>
-      {showForm&&<EditorForm initial={editing} onClose={()=>{setShowForm(false);setEditing(null);}} onSave={(name,pw)=>{if(editing){const p={name};if(pw)p.password=hash(pw);updEditor(editing.id,p);}else addEditor(name,pw);setShowForm(false);setEditing(null);}}/>}
+      {showForm&&<EditorFormComp initial={editing} onClose={()=>{setShowForm(false);setEditing(null);}} onSave={(name,pw)=>{if(editing){const p={name};if(pw)p.password=hash(pw);updEditor(editing.id,p);}else addEditor(name,pw);setShowForm(false);setEditing(null);}}/>}
     </div>
   );
 }
@@ -1013,33 +1215,33 @@ function ClientsTab({data,addClient,updClient,delClient,canAdd,limit,plan}){
   return(
     <div style={{display:'flex',flexDirection:'column',gap:'1.25rem'}}>
       <div>
-        <h2 style={{fontSize:'1.75rem',fontWeight:'900',color:'#1c1917'}}>الزبائن</h2>
-        {plan==='free'&&<div style={{fontSize:'0.75rem',color:'#78716c'}}>{data.clients.length}/{limit} في الخطة المجانية</div>}
+        <h2 style={{fontSize:'1.75rem',fontWeight:'900',color:B.text}}>الزبائن</h2>
+        {plan==='free'&&<div style={{fontSize:'0.75rem',color:B.muted}}>{data.clients.length}/{limit} في الخطة المجانية</div>}
       </div>
-      <div style={{background:'white',borderRadius:'1rem',border:'1px solid #e7e5e4',padding:'0.75rem',display:'flex',gap:'0.5rem'}}>
+      <div style={{background:B.card,borderRadius:'1rem',border:`1px solid ${B.border}`,padding:'0.75rem',display:'flex',gap:'0.5rem'}}>
         <input value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&doAdd()} placeholder="اسم الزبون..." style={{...INP,flex:1}}/>
-        <button onClick={doAdd} style={{display:'flex',alignItems:'center',gap:'0.4rem',padding:'0.75rem 1rem',borderRadius:'0.75rem',background:canAdd?B.ink:'#a8a29e',color:'white',fontWeight:'700',border:'none',cursor:'pointer',flexShrink:0}}>
+        <button onClick={doAdd} style={{display:'flex',alignItems:'center',gap:'0.4rem',padding:'0.75rem 1rem',borderRadius:'0.75rem',background:canAdd?B.accent:'#333',color:'white',fontWeight:'700',border:'none',cursor:'pointer',flexShrink:0}}>
           <Ic n="plus" size={17} color="white"/>زيد
         </button>
       </div>
-      <div style={{background:'white',borderRadius:'1rem',border:'1px solid #e7e5e4',overflow:'hidden'}}>
-        {data.clients.length===0?<div style={{padding:'2.5rem',textAlign:'center',color:'#a8a29e',fontSize:'0.875rem'}}>ما كاين حتى زبون</div>
+      <div style={{background:B.card,borderRadius:'1rem',border:`1px solid ${B.border}`,overflow:'hidden'}}>
+        {data.clients.length===0?<div style={{padding:'2.5rem',textAlign:'center',color:B.muted,fontSize:'0.875rem'}}>ما كاين حتى زبون</div>
         :data.clients.map(item=>{
           const s=stats[item.id]||{count:0,total:0};const isEd=edId===item.id;
           return(
-            <div key={item.id} style={{padding:'0.875rem 1.25rem',display:'flex',alignItems:'center',gap:'0.75rem',borderBottom:'1px solid #f5f5f4'}}>
-              <div style={{width:'2.5rem',height:'2.5rem',borderRadius:'50%',display:'grid',placeItems:'center',fontWeight:'700',flexShrink:0,background:'#dbeafe',color:'#1d4ed8'}}>{item.name.charAt(0)}</div>
+            <div key={item.id} style={{padding:'0.875rem 1.25rem',display:'flex',alignItems:'center',gap:'0.75rem',borderBottom:`1px solid ${B.border}`}}>
+              <div style={{width:'2.5rem',height:'2.5rem',borderRadius:'50%',display:'grid',placeItems:'center',fontWeight:'700',flexShrink:0,background:'rgba(59,130,246,0.15)',color:'#60a5fa'}}>{item.name.charAt(0)}</div>
               <div style={{flex:1,minWidth:0}}>
                 {isEd?<div style={{display:'flex',gap:'0.5rem'}}>
                   <input value={edName} onChange={e=>setEdName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&(edName.trim()&&updClient(edId,edName.trim()),setEdId(null))}
-                    style={{flex:1,padding:'0.375rem 0.75rem',border:'1px solid #d6d3d1',borderRadius:'0.5rem',outline:'none',fontSize:'0.875rem'}} autoFocus/>
-                  <button onClick={()=>{if(edName.trim())updClient(edId,edName.trim());setEdId(null);}} style={{padding:'0.4rem',border:'none',background:'none',cursor:'pointer',color:'#059669',display:'flex'}}><Ic n="check" size={16} color="#059669"/></button>
-                  <button onClick={()=>setEdId(null)} style={{padding:'0.4rem',border:'none',background:'none',cursor:'pointer',color:'#78716c',display:'flex'}}><Ic n="x" size={16}/></button>
-                </div>:<><div style={{fontWeight:'700',color:'#1c1917'}}>{item.name}</div><div style={{fontSize:'0.75rem',color:'#78716c'}}>{s.count} فيديو · {fmt(s.total)} دج</div></>}
+                    style={{flex:1,padding:'0.375rem 0.75rem',border:`1px solid ${B.border}`,borderRadius:'0.5rem',outline:'none',fontSize:'0.875rem',background:'#111',color:B.text}} autoFocus/>
+                  <button onClick={()=>{if(edName.trim())updClient(edId,edName.trim());setEdId(null);}} style={{padding:'0.4rem',border:'none',background:'none',cursor:'pointer',color:B.success,display:'flex'}}><Ic n="check" size={16} color={B.success}/></button>
+                  <button onClick={()=>setEdId(null)} style={{padding:'0.4rem',border:'none',background:'none',cursor:'pointer',color:B.muted,display:'flex'}}><Ic n="x" size={16}/></button>
+                </div>:<><div style={{fontWeight:'700',color:B.text}}>{item.name}</div><div style={{fontSize:'0.75rem',color:B.muted}}>{s.count} فيديو · {fmt(s.total)} دج</div></>}
               </div>
               {!isEd&&<div style={{display:'flex',gap:'0.15rem',flexShrink:0}}>
-                <button onClick={()=>{setEdId(item.id);setEdName(item.name);}} style={{padding:'0.4rem',border:'none',background:'none',cursor:'pointer',color:'#78716c',display:'flex'}}><Ic n="pencil" size={14}/></button>
-                <button onClick={()=>delClient(item.id)} style={{padding:'0.4rem',border:'none',background:'none',cursor:'pointer',color:'#78716c',display:'flex'}}><Ic n="trash" size={14}/></button>
+                <button onClick={()=>{setEdId(item.id);setEdName(item.name);}} style={{padding:'0.4rem',border:'none',background:'none',cursor:'pointer',color:B.muted,display:'flex'}}><Ic n="pencil" size={14}/></button>
+                <button onClick={()=>delClient(item.id)} style={{padding:'0.4rem',border:'none',background:'none',cursor:'pointer',color:B.danger,display:'flex'}}><Ic n="trash" size={14} color={B.danger}/></button>
               </div>}
             </div>
           );
@@ -1053,46 +1255,50 @@ function ClientsTab({data,addClient,updClient,delClient,canAdd,limit,plan}){
 function App(){
   const[screen,setScreen]=useState('landing');
   const[agency,setAgency]=useState(null);
+  const[editor,setEditor]=useState(null);
+  const[editorData,setEditorData]=useState(null);
 
   useEffect(()=>{
-    const saved=localStorage.getItem('bgh_session_v2');
+    const saved=localStorage.getItem('bgh_beta_session');
     if(saved){
       try{
         const s=JSON.parse(saved);
         if(s.type==='superadmin')setScreen('superadmin');
         else if(s.type==='agency'&&s.agency){
-          if(isSuspended(s.agency)){setAgency(s.agency);setScreen('expired');}
-          else if(isExpired(s.agency)&&s.agency.plan!=='free'){setAgency(s.agency);setScreen('expired');}
+          if(isSuspended(s.agency)||isExpired(s.agency)&&s.agency.plan!=='free'){setAgency(s.agency);setScreen('expired');}
           else{setAgency(s.agency);setScreen('agency');}
+        }
+        else if(s.type==='editor'&&s.agency&&s.editor){
+          if(isSuspended(s.agency)||isExpired(s.agency)&&s.agency.plan!=='free'){setAgency(s.agency);setScreen('expired');}
+          else{setAgency(s.agency);setEditor(s.editor);setEditorData(s.editorData);setScreen('editor');}
         }
       }catch(e){}
     }
   },[]);
 
-  const loginAgency=ag=>{
-    if(isSuspended(ag)){setAgency(ag);localStorage.setItem('bgh_session_v2',JSON.stringify({type:'agency',agency:ag}));setScreen('expired');return;}
-    if(isExpired(ag)&&ag.plan!=='free'){setAgency(ag);localStorage.setItem('bgh_session_v2',JSON.stringify({type:'agency',agency:ag}));setScreen('expired');return;}
-    setAgency(ag);
-    localStorage.setItem('bgh_session_v2',JSON.stringify({type:'agency',agency:ag}));
-    setScreen('agency');
+  const saveSession=s=>localStorage.setItem('bgh_beta_session',JSON.stringify(s));
+
+  const onAgencyLogin=ag=>{
+    if(isSuspended(ag)||isExpired(ag)&&ag.plan!=='free'){setAgency(ag);setScreen('expired');}
+    else{setAgency(ag);saveSession({type:'agency',agency:ag});setScreen('agency');}
   };
 
-  const loginSuperAdmin=()=>{
-    localStorage.setItem('bgh_session_v2',JSON.stringify({type:'superadmin'}));
-    setScreen('superadmin');
+  const onEditorLogin=(ag,ed,data)=>{
+    if(isSuspended(ag)||isExpired(ag)&&ag.plan!=='free'){setAgency(ag);setScreen('expired');}
+    else{setAgency(ag);setEditor(ed);setEditorData(data);saveSession({type:'editor',agency:ag,editor:ed,editorData:data});setScreen('editor');}
   };
 
-  const logout=()=>{
-    localStorage.removeItem('bgh_session_v2');
-    setAgency(null);setScreen('landing');
-  };
+  const onSuperAdmin=()=>{saveSession({type:'superadmin'});setScreen('superadmin');};
+
+  const logout=()=>{localStorage.removeItem('bgh_beta_session');setAgency(null);setEditor(null);setEditorData(null);setScreen('landing');};
 
   if(screen==='landing')return<Landing onLogin={()=>setScreen('login')} onRegister={()=>setScreen('register')}/>;
-  if(screen==='register')return<Register onBack={()=>setScreen('landing')} onSuccess={loginAgency}/>;
-  if(screen==='login')return<Login onBack={()=>setScreen('landing')} onSuccess={loginAgency} onSuperAdmin={loginSuperAdmin}/>;
+  if(screen==='register')return<Register onBack={()=>setScreen('landing')} onSuccess={onAgencyLogin}/>;
+  if(screen==='login')return<Login onBack={()=>setScreen('landing')} onAgencyLogin={onAgencyLogin} onEditorLogin={onEditorLogin} onSuperAdmin={onSuperAdmin}/>;
   if(screen==='superadmin')return<SuperAdmin onLogout={logout}/>;
   if(screen==='expired'&&agency)return<ExpiredScreen agency={agency} onLogout={logout}/>;
   if(screen==='agency'&&agency)return<AgencyApp agency={agency} onLogout={logout}/>;
+  if(screen==='editor'&&editor&&agency)return<EditorApp agency={agency} editor={editor} initialData={editorData} onLogout={logout}/>;
   return null;
 }
 
