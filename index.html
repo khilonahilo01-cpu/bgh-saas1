@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -96,11 +95,10 @@ const DB={
     return data?.data||{...EMPTY};
   },
   async saveData(agencyId,data){
-  const{error}=await sb.from('app_data')
-    .update({data,updated_at:new Date().toISOString()})
-    .eq('agency_id',agencyId);
-  if(error)throw error;
-},
+    const{error}=await sb.from('app_data')
+      .update({data,updated_at:new Date().toISOString()})
+      .eq('agency_id',agencyId);
+    if(error)throw error;
   },
   async getAllAgencies(){
     const{data}=await sb.from('agencies').select('*').order('created_at',{ascending:false});
